@@ -1,0 +1,5 @@
+Respect work that has been previously completed.
+Check that what you are about to make doesn't already exist.
+Do not remove or rename functions without testing to see of the game works with them removed.
+If index.html file can not be edited, delete it and rebuild it as a new file.
+Always code defensively, plenty of logging, but responsible error handling.

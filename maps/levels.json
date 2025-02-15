@@ -1,0 +1,19 @@
+{
+    "levels": [
+        {
+            "id": 1,
+            "name": "Tutorial Level",
+            "file": "level1.json"
+        },
+        {
+            "id": 2,
+            "name": "The Cafeteria",
+            "file": "level2.json"
+        },
+        {
+            "id": 3,
+            "name": "The Hallways",
+            "file": "level3.json"
+        }
+    ]
+}

@@ -1,0 +1,36 @@
+{
+    "title": "Avoid the Dinner Lady",
+    "version": "1.0",
+    "levels": [
+        {
+            "id": "tutorial",
+            "name": "Tutorial Level",
+            "file": "0.json",
+            "difficulty": 1,
+            "unlocked": true,
+            "requiredScore": 0
+        },
+        {
+            "id": "level1",
+            "name": "The Cafeteria",
+            "file": "1.json",
+            "difficulty": 2,
+            "unlocked": false,
+            "requiredScore": 100
+        },
+        {
+            "id": "level2",
+            "name": "The Hallways",
+            "file": "2.json",
+            "difficulty": 3,
+            "unlocked": false,
+            "requiredScore": 200
+        }
+    ],
+    "settings": {
+        "scoreToUnlock": 100,
+        "defaultStartLevel": "tutorial",
+        "maxLives": 3,
+        "timeLimit": 300
+    }
+}

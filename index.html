@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cube-A-Lot</title>
+    <style>
+        body { 
+            margin: 0;
+            overflow: hidden;
+            touch-action: none;
+            font-family: Arial, sans-serif;
+        }
+        
+        canvas { 
+            display: block;
+        }
+        
+        #gameContainer { 
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #debugConsole {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-width: 80%;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        
+        .player-label {
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            pointer-events: none;
+            user-select: none;
+            z-index: 1000;
+            position: absolute;
+        }
+        
+        .ui-panel {
+            position: fixed;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 1000;
+        }
+        
+        #statsPanel {
+            top: 10px;
+            left: 10px;
+        }
+        
+        #inventoryPanel {
+            top: 10px;
+            right: 10px;
+            max-width: 200px;
+        }
+        
+        .inventory-item {
+            padding: 5px;
+            margin: 2px 0;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 2000;
+        }
+        
+        .modal h2 {
+            margin-top: 0;
+        }
+        
+        .modal-buttons {
+            margin-top: 20px;
+        }
+        
+        .modal-button {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        
+        .modal-button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="debugConsole"></div>
+        <div id="statsPanel" class="ui-panel"></div>
+        <div id="inventoryPanel" class="ui-panel"></div>
+        <div id="gameOverModal" class="modal">
+            <h2>Game Over</h2>
+            <p id="gameOverMessage"></p>
+            <div class="modal-buttons">
+                <button class="modal-button" onclick="Game.getInstance().restart()">Try Again</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Third-party libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    
+    <!-- Configuration -->
+    <script src="js/config/gameConfig.js"></script>
+    
+    <!-- Utilities -->
+    <script src="js/utils/logger.js"></script>
+    <script src="js/utils/eventManager.js"></script>
+    <script src="js/utils/pathfinder.js"></script>
+    
+    <!-- UI System -->
+    <script src="js/ui/uiManager.js"></script>
+    
+    <!-- Core game files -->
+    <script src="js/core/saveManager.js"></script>
+    <script src="js/core/levelManager.js"></script>
+    <script src="js/core/player.js"></script>
+    <script src="js/core/gameScene.js"></script>
+    <script src="js/core/game.js"></script>
+    
+    <script>
+        window.addEventListener('load', () => {
+            const game = Game.getInstance();
+            game.initialize().catch(error => {
+                console.error('Failed to start game:', error);
+            });
+        });
+    </script>
+</body>
+</html>

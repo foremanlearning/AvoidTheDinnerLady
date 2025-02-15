@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Editor - Avoid the Dinner Lady</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .editor-container {
+            display: flex;
+            gap: 20px;
+        }
+        .grid-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-width: 200px;
+        }
+        .grid {
+            display: grid;
+            gap: 1px;
+            background: #ccc;
+            border: 1px solid #999;
+        }
+        .cell {
+            width: 30px;
+            height: 30px;
+            background: white;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .cell:hover {
+            background: #f0f0f0;
+        }
+        .tool-btn {
+            display: block;
+            width: 100%;
+            margin: 5px 0;
+            padding: 8px;
+            border: 1px solid #ddd;
+            background: white;
+            cursor: pointer;
+            text-align: left;
+        }
+        .tool-btn:hover {
+            background: #f0f0f0;
+        }
+        .tool-btn.active {
+            background: #e0e0e0;
+            border-color: #999;
+        }
+        .json-output {
+            width: 100%;
+            height: 200px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        .grid-size-controls {
+            margin-bottom: 20px;
+        }
+        .grid-size-controls input {
+            width: 60px;
+            margin: 0 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Level Editor - Avoid the Dinner Lady</h1>
+    
+    <div class="editor-container">
+        <div class="grid-container">
+            <div class="grid-size-controls">
+                Width: <input type="number" id="gridWidth" value="20" min="5" max="50">
+                Height: <input type="number" id="gridHeight" value="20" min="5" max="50">
+                <button onclick="resizeGrid()">Resize Grid</button>
+            </div>
+            <div id="grid" class="grid"></div>
+        </div>
+        
+        <div class="controls">
+            <h3>Tools</h3>
+            <button class="tool-btn active" data-tool="0">Empty Space (0)</button>
+            <button class="tool-btn" data-tool="1">Wall (1)</button>
+            <button class="tool-btn" data-tool="S">Start (S)</button>
+            <button class="tool-btn" data-tool="E">Exit (E)</button>
+            <button class="tool-btn" data-tool="D">Dinner Lady (D)</button>
+            <button class="tool-btn" data-tool="H">Hiding Space (H)</button>
+            <div id="pathButtons"></div>
+            
+            <h3>Actions</h3>
+            <button onclick="generateMaze()">Generate Maze</button>
+            <button onclick="exportMap()">Export Map</button>
+            <button onclick="importMap()">Import Map</button>
+            <button onclick="clearGrid()">Clear Grid</button>
+            
+            <h3>Map JSON</h3>
+            <textarea id="jsonOutput" class="json-output"></textarea>
+        </div>
+    </div>
+
+    <script>
+        let currentTool = '0';
+        let pathCounter = 1;
+        let grid = [];
+        
+        // Initialize the grid
+        function initGrid(width, height) {
+            const gridElement = document.getElementById('grid');
+            gridElement.style.gridTemplateColumns = `repeat(${width}, 30px)`;
+            
+            // Initialize grid with empty spaces
+            grid = Array(height).fill().map(() => Array(width).fill('0'));
+            
+            // Add walls around the edges
+            for (let x = 0; x < width; x++) {
+                grid[0][x] = '1';  // Top edge
+                grid[height-1][x] = '1';  // Bottom edge
+            }
+            for (let y = 0; y < height; y++) {
+                grid[y][0] = '1';  // Left edge
+                grid[y][width-1] = '1';  // Right edge
+            }
+            
+            gridElement.innerHTML = '';
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    
+                    // Only allow editing non-edge cells
+                    if (x === 0 || x === width-1 || y === 0 || y === height-1) {
+                        cell.style.cursor = 'not-allowed';
+                    } else {
+                        cell.addEventListener('mousedown', () => setCellValue(x, y));
+                        cell.addEventListener('mouseover', (e) => {
+                            if (e.buttons === 1) setCellValue(x, y);
+                        });
+                    }
+                    gridElement.appendChild(cell);
+                }
+            }
+            updateGridDisplay();
+        }
+        
+        // Set cell value based on current tool
+        function setCellValue(x, y) {
+            // Prevent editing edge cells
+            if (x === 0 || x === grid[0].length-1 || y === 0 || y === grid.length-1) {
+                return;
+            }
+            grid[y][x] = currentTool;
+            updateGridDisplay();
+        }
+        
+        // Update the visual display of the grid
+        function updateGridDisplay() {
+            const cells = document.querySelectorAll('.cell');
+            cells.forEach(cell => {
+                const x = parseInt(cell.dataset.x);
+                const y = parseInt(cell.dataset.y);
+                cell.textContent = grid[y][x];
+                
+                // Visual styling based on cell content
+                cell.style.background = 'white';
+                if (grid[y][x] === '1') cell.style.background = '#666';
+                if (grid[y][x] === 'S') cell.style.background = '#90EE90';
+                if (grid[y][x] === 'E') cell.style.background = '#FFB6C1';
+                if (grid[y][x] === 'D') cell.style.background = '#FF6B6B';
+                if (grid[y][x] === 'H') cell.style.background = '#87CEEB';
+                if (grid[y][x].startsWith('CS')) cell.style.background = '#DDA0DD';
+                if (grid[y][x].startsWith('CE')) cell.style.background = '#E6E6FA';
+                if (grid[y][x].startsWith('IS')) cell.style.background = '#98FB98';
+                if (grid[y][x].startsWith('IE')) cell.style.background = '#F0E68C';
+            });
+        }
+        
+        // Tool selection
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTool = btn.dataset.tool;
+            });
+        });
+        
+        // Add path buttons
+        function addPathButtons() {
+            const container = document.getElementById('pathButtons');
+            container.innerHTML = `
+                <button class="tool-btn" data-tool="CS-${pathCounter}">Civilian Start ${pathCounter}</button>
+                <button class="tool-btn" data-tool="CE-${pathCounter}">Civilian End ${pathCounter}</button>
+                <button class="tool-btn" data-tool="IS-${pathCounter}">Informant Start ${pathCounter}</button>
+                <button class="tool-btn" data-tool="IE-${pathCounter}">Informant End ${pathCounter}</button>
+                <button onclick="addNewPath()">Add New Path</button>
+            `;
+            
+            // Add click handlers for new buttons
+            container.querySelectorAll('.tool-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentTool = btn.dataset.tool;
+                });
+            });
+        }
+        
+        function addNewPath() {
+            pathCounter++;
+            addPathButtons();
+        }
+        
+        // Export map to JSON
+        function exportMap() {
+            const mapData = {
+                width: grid[0].length,
+                height: grid.length,
+                grid: grid
+            };
+            document.getElementById('jsonOutput').value = JSON.stringify(mapData, null, 2);
+        }
+        
+        // Import map from JSON
+        function importMap() {
+            try {
+                const jsonData = JSON.parse(document.getElementById('jsonOutput').value);
+                grid = jsonData.grid;
+                document.getElementById('gridWidth').value = jsonData.width;
+                document.getElementById('gridHeight').value = jsonData.height;
+                initGrid(jsonData.width, jsonData.height);
+            } catch (e) {
+                alert('Invalid JSON format');
+            }
+        }
+        
+        // Resize grid
+        function resizeGrid() {
+            const width = parseInt(document.getElementById('gridWidth').value);
+            const height = parseInt(document.getElementById('gridHeight').value);
+            initGrid(width, height);
+        }
+        
+        // Clear grid
+        function clearGrid() {
+            const width = grid[0].length;
+            const height = grid.length;
+            grid = Array(height).fill().map(() => Array(width).fill('0'));
+            updateGridDisplay();
+        }
+        
+        // Generate a maze using recursive backtracking
+        function generateMaze() {
+            const width = parseInt(document.getElementById('gridWidth').value);
+            const height = parseInt(document.getElementById('gridHeight').value);
+            
+            // Reset grid with all walls
+            grid = Array(height).fill().map(() => Array(width).fill('1'));
+            
+            // Create path cells (every other cell to maintain walls between paths)
+            const mazeWidth = Math.floor((width - 3) / 2);
+            const mazeHeight = Math.floor((height - 3) / 2);
+            
+            // Track visited cells
+            const visited = Array(mazeHeight).fill().map(() => Array(mazeWidth).fill(false));
+            
+            // Recursive function to carve paths
+            function carvePath(x, y) {
+                visited[y][x] = true;
+                
+                // Define possible directions (right, down, left, up)
+                const directions = [
+                    [1, 0], [0, 1], [-1, 0], [0, -1]
+                ];
+                
+                // Shuffle directions for randomness
+                for (let i = directions.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [directions[i], directions[j]] = [directions[j], directions[i]];
+                }
+                
+                // Try each direction
+                for (const [dx, dy] of directions) {
+                    const nextX = x + dx;
+                    const nextY = y + dy;
+                    
+                    if (nextX >= 0 && nextX < mazeWidth && 
+                        nextY >= 0 && nextY < mazeHeight && 
+                        !visited[nextY][nextX]) {
+                        
+                        // Convert maze coordinates to grid coordinates
+                        const gridX = nextX * 2 + 2;
+                        const gridY = nextY * 2 + 2;
+                        const wallX = x * 2 + 2 + dx;
+                        const wallY = y * 2 + 2 + dy;
+                        
+                        // Carve the path
+                        grid[gridY][gridX] = '0';
+                        grid[wallY][wallX] = '0';
+                        
+                        carvePath(nextX, nextY);
+                    }
+                }
+            }
+            
+            // Start with all walls
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    grid[y][x] = '1';
+                }
+            }
+            
+            // Start carving from a random point
+            const startX = Math.floor(Math.random() * mazeWidth);
+            const startY = Math.floor(Math.random() * mazeHeight);
+            grid[startY * 2 + 2][startX * 2 + 2] = '0';
+            
+            // Generate the maze
+            carvePath(startX, startY);
+            
+            // Add some random openings to make it more interesting
+            const numOpenings = Math.floor((mazeWidth * mazeHeight) * 0.1); // 10% of cells
+            for (let i = 0; i < numOpenings; i++) {
+                const x = Math.floor(Math.random() * (width - 4)) + 2;
+                const y = Math.floor(Math.random() * (height - 4)) + 2;
+                if (grid[y][x] === '1' && 
+                    !(x === 0 || x === width-1 || y === 0 || y === height-1)) {
+                    grid[y][x] = '0';
+                }
+            }
+            
+            // Ensure edges are walls
+            for (let x = 0; x < width; x++) {
+                grid[0][x] = '1';
+                grid[height-1][x] = '1';
+            }
+            for (let y = 0; y < height; y++) {
+                grid[y][0] = '1';
+                grid[y][width-1] = '1';
+            }
+            
+            // Add random start and exit points on opposite sides
+            const side = Math.random() < 0.5 ? 'vertical' : 'horizontal';
+            if (side === 'vertical') {
+                // Start on left, exit on right
+                const startY = Math.floor(Math.random() * (height - 4)) + 2;
+                const exitY = Math.floor(Math.random() * (height - 4)) + 2;
+                grid[startY][1] = 'S';
+                grid[startY][2] = '0';
+                grid[exitY][width-2] = 'E';
+                grid[exitY][width-3] = '0';
+            } else {
+                // Start on top, exit on bottom
+                const startX = Math.floor(Math.random() * (width - 4)) + 2;
+                const exitX = Math.floor(Math.random() * (width - 4)) + 2;
+                grid[1][startX] = 'S';
+                grid[2][startX] = '0';
+                grid[height-2][exitX] = 'E';
+                grid[height-3][exitX] = '0';
+            }
+            
+            // Add some hiding spots
+            const numHidingSpots = Math.floor((mazeWidth * mazeHeight) * 0.05); // 5% of cells
+            for (let i = 0; i < numHidingSpots; i++) {
+                const x = Math.floor(Math.random() * (width - 4)) + 2;
+                const y = Math.floor(Math.random() * (height - 4)) + 2;
+                if (grid[y][x] === '0') {
+                    grid[y][x] = 'H';
+                }
+            }
+            
+            updateGridDisplay();
+        }
+        
+        // Initialize
+        addPathButtons();
+        initGrid(20, 20);
+    </script>
+</body>
+</html>
