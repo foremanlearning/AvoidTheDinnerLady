@@ -58,14 +58,14 @@
         },
         "rightLeg": {
             "width": 0.4,
-            "height": 1.2,
+            "height": 0.8,
             "depth": 0.4,
             "xOffset": 0.2,
             "swingRange": 30
         },
         "leftLeg": {
             "width": 0.4,
-            "height": 1.2,
+            "height": 0.8,
             "depth": 0.4,
             "xOffset": -0.2,
             "swingRange": 30

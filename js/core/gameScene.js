@@ -19,6 +19,8 @@ window.GameScene = class GameScene {
     #debugRanges = null;
     #debugText = null;
     #dinnerLadyConfig = null;
+    #endFlag = null;
+    #endPosition = null;
 
     constructor(game) {
         this.#game = game;
@@ -31,6 +33,7 @@ window.GameScene = class GameScene {
         this.#setupTouchControls();
         this.#setupKeyboardControls();
         this.#setupDebugMode();
+        this.#createEndFlag();
     }
 
     async #loadDinnerLadyConfig() {
@@ -264,6 +267,105 @@ window.GameScene = class GameScene {
         this.#debugText.position.set(dinnerLadyPos.x, 5, dinnerLadyPos.z);
     }
 
+    #createEndFlag() {
+        // Remove existing flag if any
+        if (this.#endFlag) {
+            this.#scene.remove(this.#endFlag);
+        }
+
+        const levelManager = this.#game.getLevelManager();
+        if (!levelManager) return;
+
+        const currentLevel = levelManager.getCurrentLevel();
+        if (!currentLevel || !currentLevel.end) return;
+
+        this.#endPosition = new THREE.Vector3(currentLevel.end.x, 0, currentLevel.end.z);
+        
+        // Create flag pole
+        const poleGeometry = new THREE.CylinderGeometry(0.1, 0.1, 3, 8);
+        const poleMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 }); // Brown
+        const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+        pole.position.y = 1.5; // Half height
+
+        // Create flag
+        const flagGeometry = new THREE.PlaneGeometry(1.5, 1);
+        const flagMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x00FF00,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.8
+        });
+        const flag = new THREE.Mesh(flagGeometry, flagMaterial);
+        flag.position.set(0.75, 2.5, 0); // Position at top of pole
+        
+        // Create flag group
+        this.#endFlag = new THREE.Group();
+        this.#endFlag.add(pole);
+        this.#endFlag.add(flag);
+        this.#endFlag.position.copy(this.#endPosition);
+        
+        this.#scene.add(this.#endFlag);
+        this.#logger.info('Created end flag at position:', this.#endPosition);
+    }
+
+    #checkLevelCompletion() {
+        if (!this.#player || !this.#endPosition) return;
+
+        const playerPos = this.#player.getPosition();
+        const dx = playerPos.x - this.#endPosition.x;
+        const dz = playerPos.z - this.#endPosition.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+
+        // Check if player is within 1.0 units of end flag
+        if (distance <= 1.0) {
+            this.#logger.info('Level complete! Distance to flag:', distance);
+            const levelManager = this.#game.getLevelManager();
+            
+            if (levelManager.hasNextLevel()) {
+                this.#logger.info('Loading next level...');
+                levelManager.loadNextLevel().then(() => {
+                    this.#createEndFlag(); // Create new flag for next level
+                });
+            } else {
+                this.#logger.info('Game complete! No more levels.');
+                this.#showGameWonScreen();
+            }
+        }
+    }
+
+    #showGameWonScreen() {
+        const gameWonDiv = document.createElement('div');
+        gameWonDiv.style.position = 'absolute';
+        gameWonDiv.style.top = '50%';
+        gameWonDiv.style.left = '50%';
+        gameWonDiv.style.transform = 'translate(-50%, -50%)';
+        gameWonDiv.style.backgroundColor = 'rgba(0, 255, 0, 0.8)';
+        gameWonDiv.style.padding = '20px';
+        gameWonDiv.style.borderRadius = '10px';
+        gameWonDiv.style.textAlign = 'center';
+        gameWonDiv.style.color = 'white';
+        gameWonDiv.style.fontFamily = 'Arial, sans-serif';
+        gameWonDiv.style.fontSize = '24px';
+        gameWonDiv.innerHTML = `
+            <h2>Congratulations!</h2>
+            <p>You've completed all levels!</p>
+            <p>Press SPACE to play again</p>
+        `;
+        document.body.appendChild(gameWonDiv);
+
+        // Add event listener for space to restart
+        const handleRestart = (event) => {
+            if (event.code === 'Space') {
+                document.body.removeChild(gameWonDiv);
+                document.removeEventListener('keydown', handleRestart);
+                this.#game.getLevelManager().loadFirstLevel().then(() => {
+                    this.#createEndFlag();
+                });
+            }
+        };
+        document.addEventListener('keydown', handleRestart);
+    }
+
     onTouchStart(event) {
         event.preventDefault();
         const touch = event.touches[0];
@@ -437,5 +539,12 @@ window.GameScene = class GameScene {
 
         // Update debug visuals if enabled
         this.#updateDebugVisuals();
+        this.#checkLevelCompletion();
+
+        // Wave the flag
+        if (this.#endFlag) {
+            const flag = this.#endFlag.children[1]; // The flag plane
+            flag.rotation.y = Math.sin(Date.now() * 0.003) * 0.3; // Gentle waving motion
+        }
     }
 };

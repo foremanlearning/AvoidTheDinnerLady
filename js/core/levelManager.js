@@ -11,6 +11,7 @@ class LevelManager {
         highScores: {},
         totalScore: 0
     };
+    #currentLevelIndex = null;
 
     constructor() {
         if (LevelManager.#instance) {
@@ -115,6 +116,31 @@ class LevelManager {
 
     getCurrentLevel() {
         return this.#currentLevel;
+    }
+
+    getCurrentLevelIndex() {
+        return this.#currentLevelIndex;
+    }
+
+    hasNextLevel() {
+        return this.#currentLevelIndex < this.#settings.levels.length - 1;
+    }
+
+    async loadNextLevel() {
+        if (!this.hasNextLevel()) {
+            this.#logger.warn('No more levels to load');
+            return false;
+        }
+
+        this.#currentLevelIndex++;
+        await this.loadLevel(this.#settings.levels[this.#currentLevelIndex].id);
+        return true;
+    }
+
+    async loadFirstLevel() {
+        this.#currentLevelIndex = 0;
+        await this.loadLevel(0);
+        return true;
     }
 
     getUnlockedLevels() {

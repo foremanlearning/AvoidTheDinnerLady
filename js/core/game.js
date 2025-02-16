@@ -18,6 +18,7 @@ class Game {
     #gameOverScreen = null;
     #audioManager = null;
     #dinnerLadyConfig = null;
+    #introScreens = null;
 
     constructor() {
         if (Game.#instance) {
@@ -57,6 +58,9 @@ class Game {
     async initialize() {
         try {
             this.#logger.info('Initializing game...');
+            
+            // Create intro screens first
+            this.#introScreens = IntroScreens.getInstance(this);
             
             // Load dinner lady config
             try {
@@ -130,17 +134,26 @@ class Game {
             // Set up event listeners for input
             this.#setupEventListeners(container);
 
-            // Start animation loop
-            this.#clock = new THREE.Clock();
-            this.#animate();
-            
             this.#isInitialized = true;
             this.#logger.info('Game initialized successfully');
+            
+            // Don't start animation loop yet - wait for start screen
             return true;
         } catch (error) {
             this.#logger.error('Failed to initialize game:', error);
             throw error;
         }
+    }
+
+    start() {
+        if (!this.#isInitialized) {
+            this.#logger.error('Cannot start game: not initialized');
+            return;
+        }
+
+        // Start animation loop
+        this.#clock = new THREE.Clock();
+        this.#animate();
     }
 
     #setupEventListeners(container) {
@@ -746,54 +759,5 @@ class Game {
 
     isInitialized() {
         return this.#isInitialized;
-    }
-
-    async start() {
-        if (!this.#isInitialized) {
-            this.#logger.error('Cannot start game: not initialized');
-            return;
-        }
-
-        this.#logger.info('Starting game...');
-        
-        // Ensure we have a default level loaded
-        if (!this.getCurrentLevel()) {
-            this.#logger.info('No level loaded, loading default level...');
-            const settings = this.#levelManager.getSettings();
-            await this.loadLevel(settings.defaultStartLevel);
-        }
-
-        // Ensure player is created
-        if (!this.#player) {
-            this.#logger.warn('Player not initialized during level load, creating now...');
-            this.#player = new Player(this);
-            const startPos = this.#levelManager.getPlayerStartPosition();
-            if (startPos) {
-                this.#player.setPosition(startPos.x, startPos.z);
-                this.#scene.add(this.#player.getMesh());
-            } else {
-                this.#logger.error('No valid start position found for player');
-            }
-        }
-
-        // Start animation loop if not already running
-        if (!this.#clock) {
-            this.#clock = new THREE.Clock();
-            this.#animate();
-        }
-
-        this.#logger.info('Game started successfully');
-    }
-
-    resume() {
-        this.#logger.info('Resuming game...');
-        // Additional resume logic can be added here
-    }
-
-    newGame() {
-        this.#logger.info('Starting new game...');
-        const settings = this.#levelManager.getSettings();
-        this.loadLevel(settings.defaultStartLevel);
-        // Additional new game logic can be added here
     }
 }
