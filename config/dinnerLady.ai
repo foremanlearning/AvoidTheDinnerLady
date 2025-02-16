@@ -1,9 +1,9 @@
 {
     "movement": {
-        "speed": 4.5,
+        "speed": 7.5,
         "rotationSpeed": 7.0,
-        "acceleration": 1.8,
-        "deceleration": 3.5
+        "acceleration": 1300,
+        "deceleration": 1000
     },
     "pathfinding": {
         "wallAvoidance": {

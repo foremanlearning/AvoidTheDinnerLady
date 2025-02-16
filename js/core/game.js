@@ -174,6 +174,9 @@ class Game {
         if (this.#player) {
             this.#player.update(deltaTime);
         }
+        if (this.#dinnerLady) {
+            this.#dinnerLady.update(deltaTime);
+        }
         if (this.#dinnerLadyAI) {
             this.#dinnerLadyAI.update(this.#clock.getElapsedTime());
         }
@@ -181,27 +184,11 @@ class Game {
             this.#gameScene.update(deltaTime);
         }
 
-        // Update camera position
-        this.updateCameraPosition();
-
         // Render scene
         this.#renderer.render(this.#scene, this.#camera);
         if (this.#labelRenderer) {
             this.#labelRenderer.render(this.#scene, this.#camera);
         }
-    }
-
-    updateCameraPosition() {
-        if (!this.#camera || !this.#player) return;
-
-        const playerPos = this.#player.getPosition();
-        const cameraHeight = 20;
-        const cameraOffset = 20;
-
-        this.#camera.position.x = playerPos.x;
-        this.#camera.position.y = cameraHeight;
-        this.#camera.position.z = playerPos.z + cameraOffset;
-        this.#camera.lookAt(playerPos.x, 0, playerPos.z);
     }
 
     #positionCamera(levelData) {
@@ -514,9 +501,10 @@ class Game {
 
     getScene() { return this.#scene; }
     getCamera() { return this.#camera; }
-    getLevelManager() { return this.#levelManager; }
     getRenderer() { return this.#renderer; }
+    getLabelRenderer() { return this.#labelRenderer; }
     getPlayer() { return this.#player; }
+    getLevelManager() { return this.#levelManager; }
     getUIManager() { return this.#uiManager; }
     getSaveManager() { return this.#saveManager; }
     getGameScene() { return this.#gameScene; }

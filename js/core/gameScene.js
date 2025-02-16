@@ -1,4 +1,5 @@
-class GameScene {
+// Define GameScene class in the global scope
+window.GameScene = class GameScene {
     #game = null;
     #logger = null;
     #scene = null;
@@ -12,6 +13,8 @@ class GameScene {
     #player = null;
     #cameraAngle = 0;
     #cameraRotationSpeed = 0.01;
+    #cameraTarget = null;
+    #cameraOffset = new THREE.Vector3(0, 10, 10);
 
     constructor(game) {
         this.#game = game;
@@ -19,7 +22,9 @@ class GameScene {
         this.#scene = game.getScene();
         this.#camera = game.getCamera();
         this.#player = game.getPlayer(); // Try to get player initially
+        this.#cameraTarget = this.#player; // Default camera target is player
         this.#setupTouchControls();
+        this.#setupKeyboardControls();
     }
 
     #setupTouchControls() {
@@ -59,6 +64,15 @@ class GameScene {
                 y: event.clientY
             });
             this.onMouseUp(event);
+        });
+    }
+
+    #setupKeyboardControls() {
+        window.addEventListener('keydown', (event) => {
+            // Check for Control + Alt + D
+            if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 'd') {
+                this.#toggleCameraTarget();
+            }
         });
     }
 
@@ -103,137 +117,83 @@ class GameScene {
         this.#inputStartX = x;
         this.#inputStartY = y;
         this.#inputStartTime = Date.now();
-        this.#logger.info('Input started', {
-            x,
-            y,
-            time: this.#inputStartTime,
-            type: 'start'
-        });
     }
 
     #handleInputMove(x, y) {
-        if (!this.#isInputActive) {
-            this.#logger.debug('Ignoring move event - input not active');
-            return;
-        }
+        if (!this.#isInputActive) return;
 
         const deltaX = x - this.#lastInputX;
-        const deltaY = y - this.#lastInputY;
-
-        this.#logger.debug('Input movement', {
-            deltaX,
-            deltaY,
-            currentX: x,
-            currentY: y,
-            type: 'move'
-        });
-
-        // Update camera rotation based on drag
-        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
-            this.#cameraAngle += deltaX * this.#cameraRotationSpeed;
-            this.#updateCameraPosition();
-            this.#logger.debug('Camera rotated', {
-                angle: this.#cameraAngle,
-                type: 'camera'
-            });
-        }
+        this.#cameraAngle -= deltaX * this.#cameraRotationSpeed;
 
         this.#lastInputX = x;
         this.#lastInputY = y;
     }
 
     #handleInputEnd() {
-        if (!this.#isInputActive) {
-            this.#logger.debug('Ignoring end event - input not active');
-            return;
+        const currentTime = Date.now();
+        const deltaTime = currentTime - this.#inputStartTime;
+        
+        if (deltaTime < 200) { // Click threshold of 200ms
+            const ray = this.#createRayFromScreen(this.#inputStartX, this.#inputStartY);
+            if (ray) {
+                this.#handleClick(ray);
+            }
         }
-
-        const deltaTime = Date.now() - this.#inputStartTime;
-        const deltaX = this.#lastInputX - this.#inputStartX;
-        const deltaY = this.#lastInputY - this.#inputStartY;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-        this.#logger.info('Input ended', {
-            deltaTime,
-            distance,
-            deltaX,
-            deltaY,
-            type: 'end'
-        });
-
-        // If it's a quick tap (less than 200ms) and minimal movement (less than 10px),
-        // treat it as a click/tap for movement
-        if (deltaTime < 200 && distance < 10) {
-            this.#logger.info('Quick tap detected - handling as movement', {
-                x: this.#lastInputX,
-                y: this.#lastInputY,
-                type: 'tap'
-            });
-            this.#handleTapForMovement(this.#lastInputX, this.#lastInputY);
-        }
-
+        
         this.#isInputActive = false;
     }
 
-    #handleTapForMovement(x, y) {
-        // Convert screen coordinates to world coordinates
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        
-        // Calculate mouse position in normalized device coordinates (-1 to +1)
-        mouse.x = (x / window.innerWidth) * 2 - 1;
-        mouse.y = -(y / window.innerHeight) * 2 + 1;
+    #createRayFromScreen(x, y) {
+        if (!this.#camera) return null;
 
-        this.#logger.debug('Converting screen to world coordinates', {
-            screenX: x,
-            screenY: y,
-            normalizedX: mouse.x,
-            normalizedY: mouse.y,
-            type: 'coordinate_conversion'
+        const rect = this.#game.getRenderer().domElement.getBoundingClientRect();
+        const mouseX = ((x - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((y - rect.top) / rect.height) * 2 + 1;
+
+        const raycaster = new THREE.Raycaster();
+        const mouseVector = new THREE.Vector2(mouseX, mouseY);
+        
+        raycaster.setFromCamera(mouseVector, this.#camera);
+        return raycaster;
+    }
+
+    #handleClick(ray) {
+        const intersects = ray.intersectObjects(this.#scene.children, true);
+        
+        // Find the floor intersection
+        const groundIntersect = intersects.find(intersect => {
+            // Check if it's the floor mesh by name
+            return intersect.object.name === 'floor';
         });
 
-        // Update the picking ray with the camera and mouse position
-        raycaster.setFromCamera(mouse, this.#camera);
-
-        // Create a plane at y=0 to intersect with
-        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-        const intersectPoint = new THREE.Vector3();
-
-        // Find the point of intersection
-        if (raycaster.ray.intersectPlane(plane, intersectPoint)) {
-            this.#logger.info('Found intersection point for movement', {
-                x: intersectPoint.x,
-                z: intersectPoint.z,
-                type: 'movement_target'
-            });
-            
-            // Move the player to this point
+        if (groundIntersect) {
+            const point = groundIntersect.point;
             if (this.#player) {
-                this.#player.moveToPosition(intersectPoint.x, intersectPoint.z);
+                this.#logger.info('Moving player to clicked position', { x: point.x, z: point.z });
+                this.#player.moveToPosition(point.x, point.z);
             } else {
-                this.#logger.warn('No player available for movement');
+                this.#logger.warn('No player found for movement');
             }
         } else {
-            this.#logger.warn('No intersection found for movement');
+            this.#logger.debug('No floor intersection found');
         }
     }
 
-    #updateCameraPosition() {
-        if (!this.#camera || !this.#player) return;
+    #toggleCameraTarget() {
+        const dinnerLady = this.#game.getDinnerLady();
+        if (!dinnerLady) {
+            this.#logger.warn('No dinner lady found to focus camera on');
+            return;
+        }
 
-        const playerPos = this.#player.getPosition();
-        const cameraHeight = 3; // Lower height for third-person view
-        const cameraDistance = 5; // Closer distance to player
-
-        // Calculate camera position based on angle
-        const x = playerPos.x - Math.sin(this.#cameraAngle) * cameraDistance;
-        const z = playerPos.z - Math.cos(this.#cameraAngle) * cameraDistance;
-
-        // Smoothly move camera to new position
-        this.#camera.position.lerp(new THREE.Vector3(x, cameraHeight, z), 0.1);
-        
-        // Look slightly above the player for better perspective
-        this.#camera.lookAt(playerPos.x, 1, playerPos.z);
+        // Toggle between player and dinner lady
+        if (this.#cameraTarget === this.#player) {
+            this.#cameraTarget = dinnerLady;
+            this.#logger.info('Camera focused on Dinner Lady');
+        } else {
+            this.#cameraTarget = this.#player;
+            this.#logger.info('Camera focused on Player');
+        }
     }
 
     update(deltaTime) {
@@ -241,9 +201,25 @@ class GameScene {
         if (!this.#player) {
             this.#player = this.#game.getPlayer();
             if (this.#player) {
-                this.#logger.info('Player reference obtained in GameScene');
+                this.#cameraTarget = this.#player;
             }
         }
-        this.#updateCameraPosition();
+
+        // Update camera position based on target
+        if (this.#cameraTarget) {
+            const targetPos = this.#cameraTarget.getPosition();
+            
+            // Calculate camera position based on angle and offset
+            const cameraX = targetPos.x + Math.sin(this.#cameraAngle) * this.#cameraOffset.z;
+            const cameraZ = targetPos.z + Math.cos(this.#cameraAngle) * this.#cameraOffset.z;
+            
+            // Smoothly interpolate camera position
+            this.#camera.position.x += (cameraX - this.#camera.position.x) * 5 * deltaTime;
+            this.#camera.position.y = this.#cameraOffset.y;
+            this.#camera.position.z += (cameraZ - this.#camera.position.z) * 5 * deltaTime;
+            
+            // Look at target with slight height offset for better perspective
+            this.#camera.lookAt(targetPos.x, 1, targetPos.z);
+        }
     }
-}
+};
