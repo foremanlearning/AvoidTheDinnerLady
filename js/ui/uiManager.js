@@ -5,7 +5,6 @@ class UIManager {
     #elements = new Map();
     #modalContainer;
     #statsDisplay;
-    #inventoryPanel;
 
     constructor() {
         if (UIManager.#instance) {
@@ -44,12 +43,6 @@ class UIManager {
         this.#modalContainer.className = 'modal-container';
         uiContainer.appendChild(this.#modalContainer);
 
-        // Create inventory panel
-        this.#inventoryPanel = document.createElement('div');
-        this.#inventoryPanel.id = 'inventoryPanel';
-        this.#inventoryPanel.className = 'ui-panel inventory';
-        uiContainer.appendChild(this.#inventoryPanel);
-
         this.#setupEventListeners();
         this.#createStyles();
     }
@@ -79,13 +72,6 @@ class UIManager {
                 top: 10px;
                 left: 10px;
                 min-width: 150px;
-            }
-
-            #inventoryPanel {
-                top: 10px;
-                right: 10px;
-                min-width: 200px;
-                display: none;
             }
 
             .modal-container {
@@ -151,20 +137,13 @@ class UIManager {
         this.#eventManager.subscribe('showModal', (modalData) => {
             this.showModal(modalData);
         });
-
-        this.#eventManager.subscribe('toggleInventory', () => {
-            this.toggleInventory();
-        });
     }
 
     updateStats(stats) {
         if (!stats) return;
         
         this.#statsDisplay.innerHTML = `
-            <div>HP: ${stats.hp}/${stats.maxHp}</div>
-            <div>Level: ${stats.level}</div>
-            <div>XP: ${stats.xp}/${stats.xpToNext}</div>
-            <div>Floor: ${stats.currentFloor}</div>
+            <div>Score: ${stats.score}</div>
         `;
     }
 
@@ -198,25 +177,5 @@ class UIManager {
     hideModal() {
         this.#modalContainer.style.display = 'none';
         this.#modalContainer.innerHTML = '';
-    }
-
-    toggleInventory() {
-        const isVisible = this.#inventoryPanel.style.display === 'block';
-        this.#inventoryPanel.style.display = isVisible ? 'none' : 'block';
-    }
-
-    updateInventory(items) {
-        if (!items) return;
-
-        this.#inventoryPanel.innerHTML = `
-            <div class="inventory-header">Inventory</div>
-            <div class="inventory-content">
-                ${items.map(item => `
-                    <div class="inventory-item">
-                        ${item.name} ${item.quantity > 1 ? `(${item.quantity})` : ''}
-                    </div>
-                `).join('')}
-            </div>
-        `;
     }
 }

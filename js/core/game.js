@@ -151,9 +151,41 @@ class Game {
             return;
         }
 
-        // Start animation loop
+        // Create game scene
+        this.#gameScene = new GameScene(this);
+        
+        // Initialize clock
         this.#clock = new THREE.Clock();
-        this.#animate();
+        
+        // Load first level and start background music
+        this.#levelManager.loadFirstLevel().then(() => {
+            this.#audioManager.startGameMusic();
+            this.#animate();
+        });
+    }
+
+    #animate() {
+        if (this.#isGameOver) return;
+
+        requestAnimationFrame(this.#animate.bind(this));
+        
+        const delta = this.#clock.getDelta();
+        
+        // Update game objects
+        if (this.#player) {
+            this.#player.update(delta);
+        }
+        if (this.#dinnerLady) {
+            this.#dinnerLady.update(delta);
+        }
+        
+        // Update game scene
+        if (this.#gameScene) {
+            this.#gameScene.update(delta);
+        }
+
+        // Render scene
+        this.#renderer.render(this.#scene, this.#camera);
     }
 
     #setupEventListeners(container) {
@@ -210,37 +242,6 @@ class Game {
         }
     }
 
-    #animate() {
-        requestAnimationFrame(() => this.#animate());
-        const deltaTime = this.#clock.getDelta();
-
-        // Skip updates if game is over
-        if (this.#isGameOver) return;
-
-        // Update game objects
-        if (this.#player) {
-            this.#player.update(deltaTime);
-        }
-        if (this.#dinnerLady) {
-            this.#dinnerLady.update(deltaTime);
-        }
-        if (this.#dinnerLadyAI) {
-            this.#dinnerLadyAI.update(this.#clock.getElapsedTime());
-        }
-        if (this.#gameScene) {
-            this.#gameScene.update(deltaTime);
-        }
-
-        // Check for collision with dinner lady
-        this.#updateDinnerLadyAudio();
-
-        // Render scene
-        this.#renderer.render(this.#scene, this.#camera);
-        if (this.#labelRenderer) {
-            this.#labelRenderer.render(this.#scene, this.#camera);
-        }
-    }
-
     #updateDinnerLadyAudio() {
         const player = this.#player;
         const dinnerLady = this.#dinnerLady;
@@ -285,68 +286,54 @@ class Game {
     }
 
     #gameOver() {
+        if (this.#isGameOver) return;
         this.#isGameOver = true;
+        this.#logger.info('Game Over - Caught by the Dinner Lady!');
+
+        // Play lost music
+        this.#audioManager.playLostMusic();
 
         // Create game over screen if it doesn't exist
         if (!this.#gameOverScreen) {
-            // Create a canvas for the game over text
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 256;
-            const context = canvas.getContext('2d');
-
-            // Draw game over message
-            context.fillStyle = 'rgba(0, 0, 0, 0.8)';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-            context.font = 'bold 48px Arial';
-            context.fillStyle = 'red';
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.fillText('GAME OVER!', canvas.width/2, canvas.height/3);
-            context.font = '24px Arial';
-            context.fillStyle = 'white';
-            context.fillText('Caught by the Dinner Lady!', canvas.width/2, canvas.height/2);
-            context.fillText('Press SPACE to try again', canvas.width/2, canvas.height*2/3);
-
-            // Create sprite with the canvas texture
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.SpriteMaterial({ 
-                map: texture,
-                transparent: true,
-                depthTest: false
-            });
-            this.#gameOverScreen = new THREE.Sprite(material);
-            this.#gameOverScreen.scale.set(10, 5, 1);
-
-            // Add to scene, positioned in front of camera
-            this.#scene.add(this.#gameOverScreen);
-
-            // Add event listener for restart
-            window.addEventListener('keydown', (event) => {
-                if (event.code === 'Space' && this.#isGameOver) {
-                    this.#restartGame();
-                }
-            });
+            this.#gameOverScreen = document.createElement('div');
+            this.#gameOverScreen.style.position = 'absolute';
+            this.#gameOverScreen.style.top = '50%';
+            this.#gameOverScreen.style.left = '50%';
+            this.#gameOverScreen.style.transform = 'translate(-50%, -50%)';
+            this.#gameOverScreen.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+            this.#gameOverScreen.style.padding = '20px';
+            this.#gameOverScreen.style.borderRadius = '10px';
+            this.#gameOverScreen.style.textAlign = 'center';
+            this.#gameOverScreen.style.color = 'white';
+            this.#gameOverScreen.style.fontFamily = 'Arial, sans-serif';
+            this.#gameOverScreen.style.fontSize = '24px';
+            this.#gameOverScreen.innerHTML = `
+                <h2>Game Over!</h2>
+                <p>The Dinner Lady caught you!</p>
+                <p>Press SPACE to try again</p>
+            `;
         }
+        document.body.appendChild(this.#gameOverScreen);
 
-        // Update game over screen position to face camera
-        const updateGameOverScreen = () => {
-            if (this.#isGameOver && this.#gameOverScreen) {
-                // Position the screen in front of the camera
-                const distance = 15;
-                const vector = new THREE.Vector3(0, 0, -distance);
-                vector.applyQuaternion(this.#camera.quaternion);
-                vector.add(this.#camera.position);
-                this.#gameOverScreen.position.copy(vector);
+        // Add event listener for space to restart
+        const handleRestart = (event) => {
+            if (event.code === 'Space') {
+                // Stop lost music
+                this.#audioManager.stopLostMusic();
                 
-                // Make it face the camera
-                this.#gameOverScreen.quaternion.copy(this.#camera.quaternion);
+                // Remove game over screen
+                document.body.removeChild(this.#gameOverScreen);
+                document.removeEventListener('keydown', handleRestart);
                 
-                // Keep updating
-                requestAnimationFrame(updateGameOverScreen);
+                // Reset game state
+                this.#isGameOver = false;
+                this.#levelManager.loadFirstLevel().then(() => {
+                    // Start background music again
+                    this.#audioManager.startGameMusic();
+                });
             }
         };
-        updateGameOverScreen();
+        document.addEventListener('keydown', handleRestart);
     }
 
     async #restartGame() {

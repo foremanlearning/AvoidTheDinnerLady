@@ -8,6 +8,16 @@ class AudioManager {
     #soundQueue = [];
     #isPlaying = false;
     #currentAudioFile = null;
+    #backgroundMusic = null;
+    #lostMusic = null;
+    #musicLoops = [
+        'audio/music/Loop1.mp3',
+        'audio/music/Loop2.mp3',
+        'audio/music/Loop3.mp3',
+        'audio/music/Loop4.mp3',
+        'audio/music/Loop5.mp3',
+        'audio/music/Loop6.mp3'
+    ];
 
     constructor() {
         if (AudioManager.#instance) {
@@ -50,15 +60,12 @@ class AudioManager {
                     const buffer = await audioLoader.loadAsync(path);
                     const sound = new THREE.Audio(this.#audioListener);
                     sound.setBuffer(buffer);
-                    
-                    // Add onEnded callback to handle queue
                     sound.onEnded(() => {
                         this.#logger.debug(`Sound finished: ${key}`);
                         this.#isPlaying = false;
                         this.#currentSound = null;
                         this.#playNextInQueue();
                     });
-                    
                     this.#sounds.set(key, sound);
                     this.#logger.debug(`Loaded sound: ${key}`);
                 } catch (error) {
@@ -66,11 +73,82 @@ class AudioManager {
                 }
             }
 
+            // Initialize background music (but don't start playing yet)
+            this.#backgroundMusic = new THREE.Audio(this.#audioListener);
+            this.#lostMusic = new THREE.Audio(this.#audioListener);
+
+            // Load lost music
+            try {
+                const lostBuffer = await audioLoader.loadAsync('audio/music/lost.mp3');
+                this.#lostMusic.setBuffer(lostBuffer);
+                this.#logger.debug('Loaded lost music');
+            } catch (error) {
+                this.#logger.error('Failed to load lost music:', error);
+            }
+
             this.#logger.info('AudioManager initialized successfully');
             return true;
         } catch (error) {
             this.#logger.error('Failed to initialize AudioManager:', error);
             return false;
+        }
+    }
+
+    async #startRandomBackgroundMusic() {
+        if (!this.#backgroundMusic) return;
+
+        // Stop current music if playing
+        if (this.#backgroundMusic.isPlaying) {
+            this.#backgroundMusic.stop();
+        }
+
+        try {
+            // Pick random music loop
+            const randomLoop = this.#musicLoops[Math.floor(Math.random() * this.#musicLoops.length)];
+            this.#logger.debug(`Loading background music: ${randomLoop}`);
+
+            // Load and play the music
+            const audioLoader = new THREE.AudioLoader();
+            const buffer = await audioLoader.loadAsync(randomLoop);
+            this.#backgroundMusic.setBuffer(buffer);
+            this.#backgroundMusic.setLoop(true);
+            this.#backgroundMusic.setVolume(0.5); // Set to 50% volume
+            this.#backgroundMusic.play();
+
+            // Setup ended callback to play another random track
+            this.#backgroundMusic.onEnded(() => {
+                this.#startRandomBackgroundMusic();
+            });
+
+            this.#logger.debug('Started background music');
+        } catch (error) {
+            this.#logger.error('Failed to start background music:', error);
+        }
+    }
+
+    startGameMusic() {
+        this.#startRandomBackgroundMusic();
+    }
+
+    stopGameMusic() {
+        if (this.#backgroundMusic && this.#backgroundMusic.isPlaying) {
+            this.#backgroundMusic.stop();
+        }
+    }
+
+    playLostMusic() {
+        // Stop background music
+        this.stopGameMusic();
+
+        // Play lost music
+        if (this.#lostMusic && !this.#lostMusic.isPlaying) {
+            this.#lostMusic.play();
+        }
+    }
+
+    stopLostMusic() {
+        if (this.#lostMusic && this.#lostMusic.isPlaying) {
+            this.#lostMusic.stop();
         }
     }
 
@@ -153,6 +231,10 @@ class AudioManager {
                 sound.stop();
             }
         });
+
+        // Stop music
+        this.stopGameMusic();
+        this.stopLostMusic();
     }
 
     getCurrentAudioFile() {
