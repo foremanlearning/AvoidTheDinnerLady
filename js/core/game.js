@@ -14,6 +14,10 @@ class Game {
     #gameScene = null;
     #clock = null;
     #isInitialized = false;
+    #isGameOver = false;
+    #gameOverScreen = null;
+    #audioManager = null;
+    #dinnerLadyConfig = null;
 
     constructor() {
         if (Game.#instance) {
@@ -21,6 +25,7 @@ class Game {
         }
         Game.#instance = this;
         this.#logger = Logger.getInstance();
+        this.#audioManager = AudioManager.getInstance();
     }
 
     static getInstance() {
@@ -31,15 +36,37 @@ class Game {
     }
 
     #initializeManagers() {
-        this.#uiManager = UIManager.getInstance();
+        try {
+            // Try to initialize UI manager if it exists
+            if (typeof UIManager !== 'undefined') {
+                this.#uiManager = UIManager.getInstance();
+            }
+        } catch (error) {
+            this.#logger.warn('UIManager not available:', error);
+        }
+
         this.#saveManager = SaveManager.getInstance();
         this.#levelManager = LevelManager.getInstance();
+        
+        // Initialize audio manager
+        this.#audioManager.initialize();
+        
         return this.#levelManager.initialize();
     }
 
     async initialize() {
         try {
             this.#logger.info('Initializing game...');
+            
+            // Load dinner lady config
+            try {
+                const response = await fetch('config/dinnerLady.ai');
+                this.#dinnerLadyConfig = await response.json();
+                this.#logger.info('Loaded dinner lady config');
+            } catch (error) {
+                this.#logger.error('Failed to load dinner lady config:', error);
+                throw error;
+            }
             
             // Initialize managers
             this.#logger.info('Initializing managers...');
@@ -60,6 +87,10 @@ class Game {
                 0.1,
                 1000
             );
+            
+            // Add audio listener to camera
+            this.#camera.add(this.#audioManager.getListener());
+            
             this.#camera.position.set(0, 20, 20);
             this.#camera.lookAt(0, 0, 0);
             
@@ -170,6 +201,9 @@ class Game {
         requestAnimationFrame(() => this.#animate());
         const deltaTime = this.#clock.getDelta();
 
+        // Skip updates if game is over
+        if (this.#isGameOver) return;
+
         // Update game objects
         if (this.#player) {
             this.#player.update(deltaTime);
@@ -184,10 +218,209 @@ class Game {
             this.#gameScene.update(deltaTime);
         }
 
+        // Check for collision with dinner lady
+        this.#updateDinnerLadyAudio();
+
         // Render scene
         this.#renderer.render(this.#scene, this.#camera);
         if (this.#labelRenderer) {
             this.#labelRenderer.render(this.#scene, this.#camera);
+        }
+    }
+
+    #updateDinnerLadyAudio() {
+        const player = this.#player;
+        const dinnerLady = this.#dinnerLady;
+        const audioManager = this.#audioManager;
+        
+        if (!player || !dinnerLady || !audioManager || !this.#dinnerLadyConfig) return;
+
+        const dx = player.getPosition().x - dinnerLady.getPosition().x;
+        const dz = player.getPosition().z - dinnerLady.getPosition().z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+
+        this.#logger.debug(`Distance to dinner lady: ${distance}`);
+
+        // Use ranges from config
+        const ranges = this.#dinnerLadyConfig.distances;
+        
+        // Check ranges from closest to farthest
+        if (distance <= ranges.veryClose) {
+            audioManager.playRangeSound('veryClose');
+            this.#logger.debug('Playing very close range sound');
+        } else if (distance <= ranges.close) {
+            audioManager.playRangeSound('close');
+            this.#logger.debug('Playing close range sound');
+        } else if (distance <= ranges.medium) {
+            audioManager.playRangeSound('medium');
+            this.#logger.debug('Playing medium range sound');
+        } else if (distance <= ranges.far) {
+            audioManager.playRangeSound('far');
+            this.#logger.debug('Playing far range sound');
+        }
+
+        // Check for game over condition
+        if (distance <= this.#dinnerLadyConfig.captureDistance) {
+            this.#handleGameOver();
+        }
+    }
+
+    #handleGameOver() {
+        this.#logger.info('Game Over - Caught by the Dinner Lady!');
+        this.#audioManager.playCaptureSound();
+        this.#gameOver();
+    }
+
+    #gameOver() {
+        this.#isGameOver = true;
+
+        // Create game over screen if it doesn't exist
+        if (!this.#gameOverScreen) {
+            // Create a canvas for the game over text
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const context = canvas.getContext('2d');
+
+            // Draw game over message
+            context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.font = 'bold 48px Arial';
+            context.fillStyle = 'red';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText('GAME OVER!', canvas.width/2, canvas.height/3);
+            context.font = '24px Arial';
+            context.fillStyle = 'white';
+            context.fillText('Caught by the Dinner Lady!', canvas.width/2, canvas.height/2);
+            context.fillText('Press SPACE to try again', canvas.width/2, canvas.height*2/3);
+
+            // Create sprite with the canvas texture
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true,
+                depthTest: false
+            });
+            this.#gameOverScreen = new THREE.Sprite(material);
+            this.#gameOverScreen.scale.set(10, 5, 1);
+
+            // Add to scene, positioned in front of camera
+            this.#scene.add(this.#gameOverScreen);
+
+            // Add event listener for restart
+            window.addEventListener('keydown', (event) => {
+                if (event.code === 'Space' && this.#isGameOver) {
+                    this.#restartGame();
+                }
+            });
+        }
+
+        // Update game over screen position to face camera
+        const updateGameOverScreen = () => {
+            if (this.#isGameOver && this.#gameOverScreen) {
+                // Position the screen in front of the camera
+                const distance = 15;
+                const vector = new THREE.Vector3(0, 0, -distance);
+                vector.applyQuaternion(this.#camera.quaternion);
+                vector.add(this.#camera.position);
+                this.#gameOverScreen.position.copy(vector);
+                
+                // Make it face the camera
+                this.#gameOverScreen.quaternion.copy(this.#camera.quaternion);
+                
+                // Keep updating
+                requestAnimationFrame(updateGameOverScreen);
+            }
+        };
+        updateGameOverScreen();
+    }
+
+    async #restartGame() {
+        this.#logger.info('Restarting game...');
+        
+        // Reset audio state
+        this.#audioManager.resetState();
+
+        // Remove game over screen
+        if (this.#gameOverScreen) {
+            this.#scene.remove(this.#gameOverScreen);
+            this.#gameOverScreen.material.map.dispose();
+            this.#gameOverScreen.material.dispose();
+            this.#gameOverScreen = null;
+        }
+
+        // Reset game state
+        this.#isGameOver = false;
+
+        // Clear existing scene
+        while(this.#scene.children.length > 0) { 
+            const obj = this.#scene.children[0];
+            this.#scene.remove(obj);
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) {
+                    obj.material.forEach(material => material.dispose());
+                } else {
+                    obj.material.dispose();
+                }
+            }
+        }
+
+        // Reset references
+        this.#player = null;
+        this.#dinnerLady = null;
+        this.#dinnerLadyAI = null;
+
+        try {
+            // Reload level from scratch
+            this.#logger.info('Reloading level...');
+            const levelData = await this.#levelManager.loadLevel(0);
+            if (!levelData) {
+                throw new Error('Failed to reload level');
+            }
+
+            // Recreate game objects with fresh state
+            this.#logger.info('Recreating game objects...');
+            await this.#createGameObjects(levelData, 2); // GRID_SCALE = 2
+
+            // Reset camera position
+            this.#positionCamera(levelData);
+
+            // Update GameScene with new references
+            if (this.#gameScene) {
+                this.#gameScene.resetState();
+            }
+
+            this.#logger.info('Game successfully restarted');
+        } catch (error) {
+            this.#logger.error('Failed to restart game:', error);
+            // Show error message to user
+            const errorCanvas = document.createElement('canvas');
+            errorCanvas.width = 512;
+            errorCanvas.height = 256;
+            const context = errorCanvas.getContext('2d');
+            
+            context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            context.fillRect(0, 0, errorCanvas.width, errorCanvas.height);
+            context.font = 'bold 32px Arial';
+            context.fillStyle = 'red';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText('Error Restarting Game', errorCanvas.width/2, errorCanvas.height/3);
+            context.font = '24px Arial';
+            context.fillStyle = 'white';
+            context.fillText('Please refresh the page', errorCanvas.width/2, errorCanvas.height/2);
+            
+            const texture = new THREE.CanvasTexture(errorCanvas);
+            const material = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true,
+                depthTest: false
+            });
+            const errorScreen = new THREE.Sprite(material);
+            errorScreen.scale.set(10, 5, 1);
+            this.#scene.add(errorScreen);
         }
     }
 
@@ -509,6 +742,7 @@ class Game {
     getSaveManager() { return this.#saveManager; }
     getGameScene() { return this.#gameScene; }
     getDinnerLady() { return this.#dinnerLady; }
+    getAudioManager() { return this.#audioManager; }
 
     isInitialized() {
         return this.#isInitialized;

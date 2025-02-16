@@ -1,0 +1,20 @@
+Present "click here to enable audio"
+then play this sound file on the start menu:
+audio\dinnerLady\GameStart.wav
+When player is captured, play this audio file:
+audio\dinnerLady\Captured.wav
+When player is Seen, play this audio file:
+audio\dinnerLady\Seen.wav
+When player is heard, play this audio file:
+audio\dinnerLady\OnSoundRange.wav
+When the player has a new highscore on the highscore screen, play this audio, then allow them to enter their name:
+audio\dinnerLady\Highscore.wav
+Randomly play one of these audio files at random intervals while game is playing, but DinnerLady is not following the player:
+audio\dinnerLady\You can never escape the dinner lady
+audio\dinnerLady\Time to eat your greens.wav
+audio\dinnerLady\Youre around here somewhere.wav
+audio\dinnerLady\You will eat all your veggies.wav
+audio\dinnerLady\My fish fingers werent burnt.wav
+audio\dinnerLady\My mash potato is never lumpy.wav
+audio\dinnerLady\Spinache in your teeth is a good thing.wav
+audio\dinnerLady\Wait until I tell your parents.wav
