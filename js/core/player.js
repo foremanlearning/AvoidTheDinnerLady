@@ -11,6 +11,7 @@ class Player {
     #uiManager;
     #inventory = [];
     #levelManager;
+    #character;
 
     constructor(game) {
         this.#game = game;
@@ -18,19 +19,16 @@ class Player {
         this.#eventManager = EventManager.getInstance();
         this.#uiManager = UIManager.getInstance();
         
-        // Initialize player mesh
-        const geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-        const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 }); // Green player
-        this.#cube = new THREE.Mesh(geometry, material);
-        this.#cube.castShadow = true;
-        this.#cube.receiveShadow = true;
+        // Initialize player character
+        this.#character = new MinecraftCharacter();
+        this.#cube = this.#character.getModel();
         
         // Create player label
         const labelDiv = document.createElement('div');
         labelDiv.className = 'player-label';
         labelDiv.textContent = 'Player';
         this.#label = new THREE.CSS2DObject(labelDiv);
-        this.#label.position.set(0, 1.5, 0);
+        this.#label.position.set(0, 2, 0);
         this.#cube.add(this.#label);
 
         // Initialize stats
@@ -58,7 +56,7 @@ class Player {
             const vector = new THREE.Vector3();
             this.#cube.updateMatrixWorld();
             vector.setFromMatrixPosition(this.#cube.matrixWorld);
-            vector.y += 1.5;
+            vector.y += 2;
 
             const camera = this.#game.getCamera();
             vector.project(camera);
@@ -88,7 +86,7 @@ class Player {
         
         // Update label position
         if (this.#label) {
-            this.#label.position.set(x, 1.5, z);
+            this.#label.position.set(x, 2, z);
         }
     }
 
@@ -153,42 +151,62 @@ class Player {
     }
 
     update(deltaTime) {
-        if (!deltaTime) {
-            return; // Skip update if no deltaTime provided
-        }
-
-        if (this.#isMoving && this.#currentPath && this.#pathIndex < this.#currentPath.length) {
-            const target = this.#currentPath[this.#pathIndex];
-            if (!target) {
-                this.#logger.warn('Invalid target in path');
+        if (this.#currentPath && this.#currentPath.length > 0 && this.#pathIndex < this.#currentPath.length) {
+            this.#isMoving = true;
+            const targetPos = this.#currentPath[this.#pathIndex];
+            
+            // Handle both string and object formats
+            let x, z;
+            if (typeof targetPos === 'string') {
+                [x, z] = targetPos.split(',').map(Number);
+            } else if (typeof targetPos === 'object') {
+                x = targetPos.x;
+                z = targetPos.z;
+            } else {
+                this.#logger.warn('Invalid target position format', { targetPos });
                 this.#isMoving = false;
-                this.#currentPath = null;
+                this.#currentPath = [];
+                this.#pathIndex = 0;
                 return;
             }
-
-            const dx = target.x - this.#cube.position.x;
-            const dz = target.z - this.#cube.position.z;
-            const distance = Math.sqrt(dx * dx + dz * dz);
-
-            if (distance < 0.1) { // Close enough to target
+            
+            const currentPos = this.#cube.position;
+            
+            // Calculate direction for character rotation
+            const dx = x - currentPos.x;
+            const dz = z - currentPos.z;
+            if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
+                const angle = Math.atan2(dx, dz);
+                this.#character.setRotation(angle);
+            }
+            
+            // Move towards target
+            const speed = 5;
+            const step = speed * deltaTime;
+            const distance = Math.sqrt(
+                Math.pow(x - currentPos.x, 2) + 
+                Math.pow(z - currentPos.z, 2)
+            );
+            
+            if (distance < step) {
                 this.#pathIndex++;
                 if (this.#pathIndex >= this.#currentPath.length) {
                     this.#isMoving = false;
-                    this.#currentPath = null;
-                    this.#logger.debug('Reached destination');
+                    this.#currentPath = [];
+                    this.#pathIndex = 0;
                 }
             } else {
-                // Move towards target
-                const speed = 5 * deltaTime; // Units per second
-                const moveX = (dx / distance) * speed;
-                const moveZ = (dz / distance) * speed;
-                
-                this.setPosition(
-                    this.#cube.position.x + moveX,
-                    this.#cube.position.z + moveZ
-                );
+                const ratio = step / distance;
+                currentPos.x += (x - currentPos.x) * ratio;
+                currentPos.z += (z - currentPos.z) * ratio;
             }
+        } else {
+            this.#isMoving = false;
         }
+        
+        // Update character animation
+        this.#character.setMoving(this.#isMoving);
+        this.#character.update(deltaTime);
     }
 
     #checkForInteraction() {

@@ -166,15 +166,18 @@ class GameScene {
         if (!this.#camera || !this.#player) return;
 
         const playerPos = this.#player.getPosition();
-        const cameraHeight = 20;
-        const cameraDistance = 20;
+        const cameraHeight = 3; // Lower height for third-person view
+        const cameraDistance = 5; // Closer distance to player
 
         // Calculate camera position based on angle
-        const x = playerPos.x + Math.sin(this.#cameraAngle) * cameraDistance;
-        const z = playerPos.z + Math.cos(this.#cameraAngle) * cameraDistance;
+        const x = playerPos.x - Math.sin(this.#cameraAngle) * cameraDistance;
+        const z = playerPos.z - Math.cos(this.#cameraAngle) * cameraDistance;
 
-        this.#camera.position.set(x, cameraHeight, z);
-        this.#camera.lookAt(playerPos.x, 0, playerPos.z);
+        // Smoothly move camera to new position
+        this.#camera.position.lerp(new THREE.Vector3(x, cameraHeight, z), 0.1);
+        
+        // Look slightly above the player for better perspective
+        this.#camera.lookAt(playerPos.x, 1, playerPos.z);
     }
 
     update(deltaTime) {
