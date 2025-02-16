@@ -1,9 +1,9 @@
 {
     "movement": {
-        "speed": 5.0,
+        "speed": 8.0,
         "rotationSpeed": 8.0,
-        "acceleration": 2.0,
-        "deceleration": 4.0
+        "acceleration": 1150.0,
+        "deceleration": 1150.0
     },
     "pathfinding": {
         "wallAvoidance": {
@@ -21,31 +21,60 @@
             "fromObjects": 1.0
         }
     },
+    "animation": {
+        "walkSpeed": 1.2,
+        "runSpeed": 2.0,
+        "turnSpeed": 1.5,
+        "blendDuration": 0.3
+    },
+    "construction": {
+        "head": {
+            "width": 0.8,
+            "height": 0.8,
+            "depth": 0.8,
+            "yOffset": 1.6
+        },
+        "body": {
+            "width": 0.8,
+            "height": 1.2,
+            "depth": 0.4,
+            "yOffset": 0.8
+        },
+        "rightArm": {
+            "width": 0.4,
+            "height": 1.2,
+            "depth": 0.4,
+            "xOffset": 0.6,
+            "yOffset": 0.8,
+            "swingRange": 45
+        },
+        "leftArm": {
+            "width": 0.4,
+            "height": 1.2,
+            "depth": 0.4,
+            "xOffset": -0.6,
+            "yOffset": 0.8,
+            "swingRange": 45
+        },
+        "rightLeg": {
+            "width": 0.4,
+            "height": 1.2,
+            "depth": 0.4,
+            "xOffset": 0.2,
+            "swingRange": 30
+        },
+        "leftLeg": {
+            "width": 0.4,
+            "height": 1.2,
+            "depth": 0.4,
+            "xOffset": -0.2,
+            "swingRange": 30
+        }
+    },
     "interaction": {
         "pickupRange": 1.5,
         "actionRange": 2.0,
         "hideSpotRange": 1.0
-    },
-    "stealth": {
-        "crouchSpeedMultiplier": 0.5,
-        "noiseRadius": {
-            "walking": 8.0,
-            "running": 12.0,
-            "crouching": 3.0
-        },
-        "visibilityModifiers": {
-            "standing": 1.0,
-            "crouching": 0.6,
-            "inShadow": 0.7,
-            "moving": 1.2
-        }
-    },
-    "stamina": {
-        "enabled": true,
-        "max": 100,
-        "drainRate": 20,
-        "regenRate": 10,
-        "regenDelay": 2.0
     },
     "debug": {
         "showPath": true,

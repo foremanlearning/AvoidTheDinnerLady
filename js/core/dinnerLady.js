@@ -8,14 +8,18 @@ class DinnerLady {
     #isMoving = false;
     #currentPath = [];
     #pathIndex = 0;
+    #config;
+    #currentSpeed = 0;
 
     constructor(game) {
         this.#game = game;
         this.#logger = new Logger();
-        this.#eventManager = EventManager.getInstance();
         
-        // Initialize dinner lady character
-        this.#character = new DinnerLadyCharacter();
+        // Load AI configuration
+        this.#loadConfig();
+        
+        // Initialize character with construction config
+        this.#character = new MinecraftCharacter(this.#config?.construction);
         this.#model = this.#character.getModel();
         
         // Create label
@@ -28,6 +32,34 @@ class DinnerLady {
         
         // Add to scene
         game.getScene().add(this.#model);
+    }
+
+    async #loadConfig() {
+        try {
+            const response = await fetch('config/dinnerLady.ai');
+            if (!response.ok) {
+                throw new Error('Failed to load dinner lady config');
+            }
+            this.#config = await response.json();
+            this.#logger.info('Loaded dinner lady AI config', this.#config);
+        } catch (error) {
+            this.#logger.error('Error loading dinner lady config:', error);
+            // Use default values if config fails to load
+            this.#config = {
+                movement: {
+                    speed: 4.5,
+                    rotationSpeed: 7.0,
+                    acceleration: 1.8,
+                    deceleration: 3.5
+                },
+                animation: {
+                    walkSpeed: 1.1,
+                    runSpeed: 1.8,
+                    turnSpeed: 1.3,
+                    blendDuration: 0.3
+                }
+            };
+        }
     }
 
     setPosition(x, z) {
@@ -71,62 +103,85 @@ class DinnerLady {
     }
 
     update(deltaTime) {
-        if (this.#currentPath && this.#currentPath.length > 0 && this.#pathIndex < this.#currentPath.length) {
-            this.#isMoving = true;
-            const targetPos = this.#currentPath[this.#pathIndex];
+        if (!this.#config) return;
+
+        if (this.#currentPath.length > 0 && this.#pathIndex < this.#currentPath.length) {
+            const target = this.#currentPath[this.#pathIndex];
+            const position = this.getPosition();
             
-            // Handle both string and object formats
-            let x, z;
-            if (typeof targetPos === 'string') {
-                [x, z] = targetPos.split(',').map(Number);
-            } else if (typeof targetPos === 'object') {
-                x = targetPos.x;
-                z = targetPos.z;
-            } else {
-                this.#logger.warn('Invalid target position format', { targetPos });
-                this.#isMoving = false;
-                this.#currentPath = [];
-                this.#pathIndex = 0;
-                return;
-            }
+            // Calculate direction and distance
+            const dx = target.x - position.x;
+            const dz = target.z - position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
             
-            const currentPos = this.#model.position;
-            
-            // Calculate direction for character rotation
-            const dx = x - currentPos.x;
-            const dz = z - currentPos.z;
-            if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
-                const angle = Math.atan2(dx, dz);
-                this.#character.setRotation(angle);
-            }
-            
-            // Move towards target
-            const speed = 4; // Slightly slower than player
-            const step = speed * deltaTime;
-            const distance = Math.sqrt(
-                Math.pow(x - currentPos.x, 2) + 
-                Math.pow(z - currentPos.z, 2)
-            );
-            
-            if (distance < step) {
-                this.#pathIndex++;
-                if (this.#pathIndex >= this.#currentPath.length) {
-                    this.#isMoving = false;
-                    this.#currentPath = [];
-                    this.#pathIndex = 0;
+            if (distance > 0.1) {
+                // Calculate movement based on config
+                const speed = this.#config.movement.speed;
+                const acceleration = this.#config.movement.acceleration;
+                const deceleration = this.#config.movement.deceleration;
+                
+                // Calculate current speed with smooth acceleration
+                let currentSpeed;
+                if (this.#isMoving) {
+                    currentSpeed = Math.min(speed, this.#currentSpeed + acceleration * deltaTime);
+                } else {
+                    currentSpeed = Math.min(speed, acceleration * deltaTime);
                 }
+                this.#currentSpeed = currentSpeed;
+                
+                // Move towards target
+                const moveX = (dx / distance) * currentSpeed * deltaTime;
+                const moveZ = (dz / distance) * currentSpeed * deltaTime;
+                
+                this.#model.position.x += moveX;
+                this.#model.position.z += moveZ;
+                
+                // Rotate towards movement direction
+                const targetRotation = Math.atan2(dx, dz);
+                const currentRotation = this.#model.rotation.y;
+                const rotationDiff = targetRotation - currentRotation;
+                
+                // Normalize rotation difference
+                const normalizedDiff = Math.atan2(Math.sin(rotationDiff), Math.cos(rotationDiff));
+                
+                // Apply rotation with smooth interpolation
+                const rotationSpeed = this.#config.movement.rotationSpeed;
+                const rotationAmount = Math.sign(normalizedDiff) * Math.min(Math.abs(normalizedDiff), rotationSpeed * deltaTime);
+                this.#model.rotation.y += rotationAmount;
+                
+                // Update character animation with speed-based animation
+                if (this.#character) {
+                    const animSpeed = distance > 1 ? this.#config.animation.runSpeed : this.#config.animation.walkSpeed;
+                    this.#character.setMoving(true, animSpeed);
+                }
+                
+                this.#isMoving = true;
             } else {
-                const ratio = step / distance;
-                currentPos.x += (x - currentPos.x) * ratio;
-                currentPos.z += (z - currentPos.z) * ratio;
+                // Apply deceleration when reaching target
+                if (this.#currentSpeed > 0) {
+                    this.#currentSpeed = Math.max(0, this.#currentSpeed - this.#config.movement.deceleration * deltaTime);
+                }
+                
+                if (this.#currentSpeed === 0) {
+                    this.#pathIndex++;
+                    if (this.#pathIndex >= this.#currentPath.length) {
+                        this.#currentPath = [];
+                        this.#pathIndex = 0;
+                        this.#isMoving = false;
+                        
+                        // Stop animation with smooth transition
+                        if (this.#character) {
+                            this.#character.setMoving(false);
+                        }
+                    }
+                }
             }
-        } else {
-            this.#isMoving = false;
         }
-        
-        // Update character animation
-        this.#character.setMoving(this.#isMoving);
-        this.#character.update(deltaTime);
+
+        // Update character animations
+        if (this.#character) {
+            this.#character.update(deltaTime);
+        }
     }
 
     getPosition() {

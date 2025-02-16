@@ -1,4 +1,76 @@
 {
+    "movement": {
+        "speed": 4.5,
+        "rotationSpeed": 7.0,
+        "acceleration": 1.8,
+        "deceleration": 3.5
+    },
+    "pathfinding": {
+        "wallAvoidance": {
+            "enabled": true,
+            "baseCost": 2.0,
+            "maxCost": 5.0,
+            "checkRadius": 1
+        },
+        "cornerAvoidance": {
+            "enabled": true,
+            "extraCost": 3.0
+        },
+        "preferredDistance": {
+            "fromWalls": 1.5,
+            "fromObjects": 1.0
+        }
+    },
+    "animation": {
+        "walkSpeed": 1.1,
+        "runSpeed": 1.8,
+        "turnSpeed": 1.3,
+        "blendDuration": 0.3
+    },
+    "construction": {
+        "head": {
+            "width": 0.9,
+            "height": 0.9,
+            "depth": 0.9,
+            "yOffset": 1.7
+        },
+        "body": {
+            "width": 0.9,
+            "height": 1.3,
+            "depth": 0.5,
+            "yOffset": 0.85
+        },
+        "rightArm": {
+            "width": 0.45,
+            "height": 1.3,
+            "depth": 0.45,
+            "xOffset": 0.65,
+            "yOffset": 0.85,
+            "swingRange": 40
+        },
+        "leftArm": {
+            "width": 0.45,
+            "height": 1.3,
+            "depth": 0.45,
+            "xOffset": -0.65,
+            "yOffset": 0.85,
+            "swingRange": 40
+        },
+        "rightLeg": {
+            "width": 0.45,
+            "height": 1.3,
+            "depth": 0.45,
+            "xOffset": 0.25,
+            "swingRange": 25
+        },
+        "leftLeg": {
+            "width": 0.45,
+            "height": 1.3,
+            "depth": 0.45,
+            "xOffset": -0.25,
+            "swingRange": 25
+        }
+    },
     "distances": {
         "veryClose": 5,
         "close": 10,
@@ -29,5 +101,10 @@
             "updateInterval": 12,
             "minDistanceFromPlayer": 15
         }
+    },
+    "debug": {
+        "showPath": true,
+        "showDetectionRadius": false,
+        "showBehaviorState": true
     }
 }

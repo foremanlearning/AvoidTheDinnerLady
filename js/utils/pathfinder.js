@@ -60,14 +60,20 @@ class Pathfinder {
         }
     }
 
-    findPath(grid, startX, startY, endX, endY) {
+    findPath(grid, startX, startY, endX, endY, gridScale = 1) {
         this.#grid = grid;
+
+        // Convert world coordinates to grid coordinates
+        startX = Math.round(startX / gridScale);
+        startY = Math.round(startY / gridScale);
+        endX = Math.round(endX / gridScale);
+        endY = Math.round(endY / gridScale);
 
         // Validate start position
         if (!this.#isValidPosition(startX, startY)) {
             const validStart = this.#findNearestValidPosition(startX, startY);
             if (!validStart) {
-                this.#logger.warn('Start position is not valid', { x: startX, y: startY });
+                this.#logger.warn('Start position is not valid', { x: startX * gridScale, y: startY * gridScale });
                 return null;
             }
             startX = validStart.x;
@@ -78,22 +84,22 @@ class Pathfinder {
         if (!this.#isValidPosition(endX, endY)) {
             const validEnd = this.#findNearestValidPosition(endX, endY);
             if (!validEnd) {
-                this.#logger.warn('End position is not valid', { x: endX, y: endY });
+                this.#logger.warn('End position is not valid', { x: endX * gridScale, y: endY * gridScale });
                 return null;
             }
             endX = validEnd.x;
             endY = validEnd.y;
-            this.#logger.info('Using nearest valid end position', validEnd);
+            this.#logger.info('Using nearest valid end position', { x: endX * gridScale, y: endY * gridScale });
         }
 
         // Validate coordinates
         if (!this.isWalkable(startX, startY)) {
-            this.#logger.warn('Start position is not valid', { x: startX, y: startY });
+            this.#logger.warn('Start position is not valid', { x: startX * gridScale, y: startY * gridScale });
             return null;
         }
         
         if (!this.isWalkable(endX, endY)) {
-            this.#logger.warn('End position is not valid', { x: endX, y: endY });
+            this.#logger.warn('End position is not valid', { x: endX * gridScale, y: endY * gridScale });
             return null;
         }
 
@@ -116,7 +122,7 @@ class Pathfinder {
             const [currentX, currentY] = current.split(',').map(Number);
 
             if (currentX === endX && currentY === endY) {
-                return this.#reconstructPath(cameFrom, current);
+                return this.#reconstructPath(cameFrom, current, gridScale);
             }
 
             openSet.delete(current);
@@ -326,7 +332,7 @@ class Pathfinder {
         );
     }
 
-    #reconstructPath(cameFrom, current) {
+    #reconstructPath(cameFrom, current, gridScale) {
         const path = [current];
         while (cameFrom.has(current)) {
             current = cameFrom.get(current);
@@ -334,7 +340,7 @@ class Pathfinder {
         }
         return path.map(pos => {
             const [x, y] = pos.split(',').map(Number);
-            return { x, y };
+            return { x: x * gridScale, z: y * gridScale };
         });
     }
 }

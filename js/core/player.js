@@ -13,6 +13,7 @@ class Player {
     #levelManager;
     #character;
     #config;
+    #currentSpeed = 0;
 
     constructor(game) {
         this.#game = game;
@@ -23,8 +24,8 @@ class Player {
         // Load player AI configuration
         this.#loadConfig();
         
-        // Initialize player character
-        this.#character = new MinecraftCharacter();
+        // Initialize player character with construction config
+        this.#character = new MinecraftCharacter(this.#config?.construction);
         this.#cube = this.#character.getModel();
         
         // Create player label
@@ -35,10 +36,9 @@ class Player {
         this.#label.position.set(0, 2, 0);
         this.#cube.add(this.#label);
 
-        // Initialize stats
+        // Initialize basic stats
         this.#stats = {
             health: 100,
-            stamina: this.#config?.stamina?.max || 100,
             keys: 0,
             score: 0
         };
@@ -59,11 +59,18 @@ class Player {
             this.#logger.error('Error loading player config:', error);
             // Use default values if config fails to load
             this.#config = {
-                movement: { speed: 5.0, rotationSpeed: 8.0 },
-                pathfinding: {
-                    wallAvoidance: { enabled: true, baseCost: 2.0, maxCost: 5.0 }
+                movement: {
+                    speed: 5.0,
+                    rotationSpeed: 8.0,
+                    acceleration: 2.0,
+                    deceleration: 4.0
                 },
-                stamina: { max: 100, regenRate: 10.0 }
+                animation: {
+                    walkSpeed: 1.2,
+                    runSpeed: 2.0,
+                    turnSpeed: 1.5,
+                    blendDuration: 0.3
+                }
             };
         }
     }
@@ -144,38 +151,19 @@ class Player {
             to: { x, z }
         });
 
-        // Convert world coordinates to grid coordinates
         const GRID_SCALE = 2;
-        const currentGridX = Math.floor(currentPos.x / GRID_SCALE);
-        const currentGridZ = Math.floor(currentPos.z / GRID_SCALE);
-        const targetGridX = Math.floor(x / GRID_SCALE);
-        const targetGridZ = Math.floor(z / GRID_SCALE);
-
-        this.#logger.debug('Grid coordinates', {
-            from: { x: currentGridX, z: currentGridZ },
-            to: { x: targetGridX, z: targetGridZ }
-        });
-
         const pathfinder = Pathfinder.getInstance();
         const path = pathfinder.findPath(
             currentLevel.grid,
-            currentGridX,
-            currentGridZ,
-            targetGridX,
-            targetGridZ
+            currentPos.x,
+            currentPos.z,
+            x,
+            z,
+            GRID_SCALE
         );
 
         if (path) {
-            // Convert grid coordinates back to world coordinates
-            this.#currentPath = path.map(pos => {
-                const gridX = typeof pos === 'string' ? Number(pos.split(',')[0]) : pos.x;
-                const gridZ = typeof pos === 'string' ? Number(pos.split(',')[1]) : pos.y;
-                return {
-                    x: gridX * GRID_SCALE + GRID_SCALE / 2, // Center in the grid cell
-                    z: gridZ * GRID_SCALE + GRID_SCALE / 2
-                };
-            });
-            
+            this.#currentPath = path;
             this.#pathIndex = 0;
             this.#isMoving = true;
             
@@ -185,7 +173,7 @@ class Player {
                 targetPos: { x, z }
             });
         } else {
-            this.#logger.warn('No valid path found to destination', {
+            this.#logger.warn('No path found to destination', {
                 from: { x: currentPos.x, z: currentPos.z },
                 to: { x, z }
             });
@@ -193,57 +181,86 @@ class Player {
     }
 
     update(deltaTime) {
-        if (!this.#isMoving || !this.#currentPath || this.#pathIndex >= this.#currentPath.length) {
-            return;
-        }
+        if (!this.#config) return;
 
-        const target = this.#currentPath[this.#pathIndex];
-        const currentPos = this.#cube.position;
-        
-        // Calculate movement based on config speed
-        const speed = this.#config?.movement?.speed || 5.0;
-        const moveSpeed = speed * deltaTime;
-        
-        const dx = target.x - currentPos.x;
-        const dz = target.z - currentPos.z;
-        const distance = Math.sqrt(dx * dx + dz * dz);
-
-        if (distance < moveSpeed) {
-            // Reached current waypoint
-            this.#pathIndex++;
-            if (this.#pathIndex >= this.#currentPath.length) {
-                this.#isMoving = false;
-                this.#currentPath = null;
-                return;
-            }
-        } else {
-            // Move towards target
-            const moveX = (dx / distance) * moveSpeed;
-            const moveZ = (dz / distance) * moveSpeed;
+        // Update movement
+        if (this.#currentPath.length > 0 && this.#pathIndex < this.#currentPath.length) {
+            const target = this.#currentPath[this.#pathIndex];
+            const position = this.getPosition();
             
-            currentPos.x += moveX;
-            currentPos.z += moveZ;
-
-            // Update character rotation
-            const angle = Math.atan2(dx, dz);
-            const rotationSpeed = this.#config?.movement?.rotationSpeed || 8.0;
-            this.#cube.rotation.y = angle;
-        }
-
-        // Update stamina
-        if (this.#config?.stamina?.enabled) {
-            // Drain stamina while moving
-            if (this.#isMoving) {
-                const staminaCost = this.#config.stamina.drainRate * deltaTime;
-                this.#stats.stamina = Math.max(0, this.#stats.stamina - staminaCost);
+            // Calculate direction and distance
+            const dx = target.x - position.x;
+            const dz = target.z - position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            
+            if (distance > 0.1) {
+                // Calculate movement based on config
+                const speed = this.#config.movement.speed;
+                const acceleration = this.#config.movement.acceleration;
+                const deceleration = this.#config.movement.deceleration;
+                
+                // Calculate current speed with smooth acceleration
+                let currentSpeed;
+                if (this.#isMoving) {
+                    currentSpeed = Math.min(speed, this.#currentSpeed + acceleration * deltaTime);
+                } else {
+                    currentSpeed = Math.min(speed, acceleration * deltaTime);
+                }
+                this.#currentSpeed = currentSpeed;
+                
+                // Move towards target
+                const moveX = (dx / distance) * currentSpeed * deltaTime;
+                const moveZ = (dz / distance) * currentSpeed * deltaTime;
+                
+                this.#cube.position.x += moveX;
+                this.#cube.position.z += moveZ;
+                
+                // Rotate towards movement direction
+                const targetRotation = Math.atan2(dx, dz);
+                const currentRotation = this.#cube.rotation.y;
+                const rotationDiff = targetRotation - currentRotation;
+                
+                // Normalize rotation difference
+                const normalizedDiff = Math.atan2(Math.sin(rotationDiff), Math.cos(rotationDiff));
+                
+                // Apply rotation with smooth interpolation
+                const rotationSpeed = this.#config.movement.rotationSpeed;
+                const rotationAmount = Math.sign(normalizedDiff) * Math.min(Math.abs(normalizedDiff), rotationSpeed * deltaTime);
+                this.#cube.rotation.y += rotationAmount;
+                
+                // Update character animation with speed-based animation
+                if (this.#character) {
+                    const animSpeed = distance > 1 ? this.#config.animation.runSpeed : this.#config.animation.walkSpeed;
+                    this.#character.setMoving(true, animSpeed);
+                }
+                
+                this.#isMoving = true;
             } else {
-                // Only regenerate stamina when not moving and after delay
-                const regenAmount = this.#config.stamina.regenRate * deltaTime;
-                this.#stats.stamina = Math.min(this.#config.stamina.max, this.#stats.stamina + regenAmount);
+                // Apply deceleration when reaching target
+                if (this.#currentSpeed > 0) {
+                    this.#currentSpeed = Math.max(0, this.#currentSpeed - this.#config.movement.deceleration * deltaTime);
+                }
+                
+                if (this.#currentSpeed === 0) {
+                    this.#pathIndex++;
+                    if (this.#pathIndex >= this.#currentPath.length) {
+                        this.#currentPath = [];
+                        this.#pathIndex = 0;
+                        this.#isMoving = false;
+                        
+                        // Stop animation with smooth transition
+                        if (this.#character) {
+                            this.#character.setMoving(false);
+                        }
+                    }
+                }
             }
         }
 
-        this.#updateUI();
+        // Update character animations
+        if (this.#character) {
+            this.#character.update(deltaTime);
+        }
     }
 
     #checkForInteraction() {

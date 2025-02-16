@@ -8,6 +8,11 @@ class MinecraftCharacter {
     #model;
     #isMoving = false;
     #animationTime = 0;
+    #animationSpeed = 1.0;
+    #currentSwingAngle = 0;
+    #targetSwingAngle = 0;
+    #blendDuration = 0.3;
+    #blendTimer = 0;
 
     constructor() {
         this.#model = new THREE.Group();
@@ -87,30 +92,35 @@ class MinecraftCharacter {
     
     update(deltaTime) {
         if (this.#isMoving) {
-            this.#animationTime += deltaTime * 5;
-            
-            // Animate arms and legs
-            const swingAngle = Math.sin(this.#animationTime) * 0.5;
-            
-            // Arms swing opposite to each other
-            this.#leftArm.rotation.x = swingAngle;
-            this.#rightArm.rotation.x = -swingAngle;
-            
-            // Legs swing opposite to each other
-            this.#leftLeg.rotation.x = -swingAngle;
-            this.#rightLeg.rotation.x = swingAngle;
+            // Update animation time based on speed
+            this.#animationTime += deltaTime * 5 * this.#animationSpeed;
+            this.#targetSwingAngle = Math.sin(this.#animationTime) * 0.5;
         } else {
-            // Reset animations when not moving
-            this.#animationTime = 0;
-            this.#leftArm.rotation.x = 0;
-            this.#rightArm.rotation.x = 0;
-            this.#leftLeg.rotation.x = 0;
-            this.#rightLeg.rotation.x = 0;
+            this.#targetSwingAngle = 0;
         }
+
+        // Smoothly blend between current and target swing angles
+        if (this.#blendTimer < this.#blendDuration) {
+            this.#blendTimer += deltaTime;
+            const t = Math.min(this.#blendTimer / this.#blendDuration, 1);
+            this.#currentSwingAngle = this.#currentSwingAngle + (this.#targetSwingAngle - this.#currentSwingAngle) * t;
+        } else {
+            this.#currentSwingAngle = this.#targetSwingAngle;
+        }
+
+        // Apply swing angles to limbs
+        this.#leftArm.rotation.x = this.#currentSwingAngle;
+        this.#rightArm.rotation.x = -this.#currentSwingAngle;
+        this.#leftLeg.rotation.x = -this.#currentSwingAngle;
+        this.#rightLeg.rotation.x = this.#currentSwingAngle;
     }
-    
-    setMoving(isMoving) {
+
+    setMoving(isMoving, speed = 1.0) {
+        if (this.#isMoving !== isMoving) {
+            this.#blendTimer = 0;
+        }
         this.#isMoving = isMoving;
+        this.#animationSpeed = speed;
     }
     
     getModel() {
