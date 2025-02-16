@@ -1,0 +1,33 @@
+{
+    "distances": {
+        "veryClose": 5,
+        "close": 10,
+        "medium": 20,
+        "far": 30
+    },
+    "updateIntervals": {
+        "veryClose": 1,
+        "close": 5,
+        "medium": 8,
+        "far": 12
+    },
+    "behavior": {
+        "veryClose": {
+            "targetType": "player",
+            "updateInterval": 1
+        },
+        "close": {
+            "targetType": "player",
+            "updateInterval": 5
+        },
+        "medium": {
+            "targetType": "player",
+            "updateInterval": 8
+        },
+        "far": {
+            "targetType": "random",
+            "updateInterval": 12,
+            "minDistanceFromPlayer": 15
+        }
+    }
+}

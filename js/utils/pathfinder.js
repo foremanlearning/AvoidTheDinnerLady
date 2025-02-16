@@ -14,12 +14,14 @@ class Pathfinder {
     static #instance = null;
     #logger;
     #grid;
+    #config;
 
     constructor() {
         if (Pathfinder.#instance) {
             return Pathfinder.#instance;
         }
         this.#logger = new Logger();
+        this.#loadConfig();
         Pathfinder.#instance = this;
     }
 
@@ -30,18 +32,68 @@ class Pathfinder {
         return Pathfinder.#instance;
     }
 
-    findPath(grid, startX, startY, endX, endY, gridScale = 2) {
-        this.#grid = grid; // Store grid for use in isWalkable
+    async #loadConfig() {
+        try {
+            const response = await fetch('config/player.ai');
+            if (!response.ok) {
+                throw new Error('Failed to load player config');
+            }
+            this.#config = await response.json();
+            this.#logger.info('Loaded pathfinding config', this.#config.pathfinding);
+        } catch (error) {
+            this.#logger.error('Error loading pathfinding config:', error);
+            // Use default values if config fails to load
+            this.#config = {
+                pathfinding: {
+                    wallAvoidance: {
+                        enabled: true,
+                        baseCost: 2.0,
+                        maxCost: 5.0,
+                        checkRadius: 1
+                    },
+                    cornerAvoidance: {
+                        enabled: true,
+                        extraCost: 3.0
+                    }
+                }
+            };
+        }
+    }
 
-        // Convert from world coordinates to grid coordinates
-        startX = Math.floor(startX / gridScale);
-        startY = Math.floor(startY / gridScale);
-        endX = Math.floor(endX / gridScale);
-        endY = Math.floor(endY / gridScale);
+    findPath(grid, startX, startY, endX, endY) {
+        this.#grid = grid;
+
+        // Validate start position
+        if (!this.#isValidPosition(startX, startY)) {
+            const validStart = this.#findNearestValidPosition(startX, startY);
+            if (!validStart) {
+                this.#logger.warn('Start position is not valid', { x: startX, y: startY });
+                return null;
+            }
+            startX = validStart.x;
+            startY = validStart.y;
+        }
+
+        // Validate end position
+        if (!this.#isValidPosition(endX, endY)) {
+            const validEnd = this.#findNearestValidPosition(endX, endY);
+            if (!validEnd) {
+                this.#logger.warn('End position is not valid', { x: endX, y: endY });
+                return null;
+            }
+            endX = validEnd.x;
+            endY = validEnd.y;
+            this.#logger.info('Using nearest valid end position', validEnd);
+        }
 
         // Validate coordinates
-        if (!this.isWalkable(startX, startY) || !this.isWalkable(endX, endY)) {
-            this.#logger.warn('Start or end position is not valid', { startX, startY, endX, endY });
+        if (!this.isWalkable(startX, startY)) {
+            this.#logger.warn('Start position is not valid', { x: startX, y: startY });
+            return null;
+        }
+        
+        if (!this.isWalkable(endX, endY)) {
+            this.#logger.warn('End position is not valid', { x: endX, y: endY });
             return null;
         }
 
@@ -57,27 +109,14 @@ class Pathfinder {
         while (openSet.size > 0) {
             let current = this.#getLowestFScore(openSet, fScore);
             
-            // Ensure current is a string coordinate
             if (typeof current !== 'string') {
-                // Handle both object {x,y} and string 'x,y' formats
-                current = typeof current === 'object' ? `${current.x},${current.y}` : String(current);
+                current = `${current.x},${current.y}`;
             }
 
             const [currentX, currentY] = current.split(',').map(Number);
 
             if (currentX === endX && currentY === endY) {
-                const path = this.#reconstructPath(cameFrom, current);
-                // Convert path back to world coordinates
-                const worldPath = path.map(pos => {
-                    // Handle both object and string formats
-                    if (typeof pos === 'object') {
-                        return `${pos.x * gridScale},${pos.y * gridScale}`;
-                    }
-                    const [x, y] = pos.split(',').map(Number);
-                    return `${x * gridScale},${y * gridScale}`;
-                });
-                this.#logger.debug('Path found', { worldPath });
-                return worldPath;
+                return this.#reconstructPath(cameFrom, current);
             }
 
             openSet.delete(current);
@@ -100,7 +139,9 @@ class Pathfinder {
                 const neighbor = `${newX},${newY}`;
                 if (closedSet.has(neighbor)) continue;
 
-                const tentativeGScore = gScore.get(current) + 1;
+                // Add wall proximity cost to movement cost
+                const wallProximityCost = this.#calculateWallProximityCost(newX, newY);
+                const tentativeGScore = gScore.get(current) + 1 + wallProximityCost;
 
                 if (!openSet.has(neighbor)) {
                     openSet.add(neighbor);
@@ -119,9 +160,16 @@ class Pathfinder {
     }
 
     isWalkable(x, y) {
-        // Check if position is walkable
-        if (!this.#isValidPosition(x, y)) return false;
-        return this.#grid[y][x] !== '1'; // Check for non-wall tiles
+        if (!this.#isValidPosition(x, y)) {
+            this.#logger.debug('Position out of bounds', { x, y });
+            return false;
+        }
+        
+        const cell = this.#grid[y][x];
+        const isWalkable = cell !== '1';
+        
+        this.#logger.debug('Checking walkable', { x, y, cell, isWalkable });
+        return isWalkable;
     }
 
     #calculateClearance(grid) {
@@ -164,8 +212,107 @@ class Pathfinder {
         return clearance;
     }
 
+    #calculateWallProximityCost(x, y) {
+        if (!this.#config?.pathfinding?.wallAvoidance?.enabled) {
+            return 0;
+        }
+
+        const config = this.#config.pathfinding.wallAvoidance;
+        const radius = config.checkRadius || 1;
+        let wallCount = 0;
+        let cornerCount = 0;
+
+        // Check surrounding cells in the specified radius
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                
+                const checkX = x + dx;
+                const checkY = y + dy;
+                
+                if (this.#isValidPosition(checkX, checkY) && this.#grid[checkY][checkX] === '1') {
+                    // Calculate distance-based weight
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const weight = 1 / distance;
+                    wallCount += weight;
+
+                    // Check for corners (cells with two adjacent walls)
+                    if (this.#config.pathfinding.cornerAvoidance.enabled &&
+                        this.#isCorner(checkX, checkY)) {
+                        cornerCount++;
+                    }
+                }
+            }
+        }
+
+        // Calculate total cost
+        let cost = wallCount * config.baseCost;
+        
+        // Add corner avoidance cost
+        if (this.#config.pathfinding.cornerAvoidance.enabled) {
+            cost += cornerCount * this.#config.pathfinding.cornerAvoidance.extraCost;
+        }
+
+        this.#logger.debug('Wall proximity cost', {
+            position: { x, y },
+            wallCount,
+            cornerCount,
+            totalCost: Math.min(cost, config.maxCost)
+        });
+
+        return Math.min(cost, config.maxCost);
+    }
+
+    #isCorner(x, y) {
+        const neighbors = [
+            [-1, 0], [1, 0],  // horizontal
+            [0, -1], [0, 1]   // vertical
+        ];
+
+        let wallCount = 0;
+        for (const [dx, dy] of neighbors) {
+            const checkX = x + dx;
+            const checkY = y + dy;
+            if (this.#isValidPosition(checkX, checkY) && this.#grid[checkY][checkX] === '1') {
+                wallCount++;
+            }
+        }
+
+        return wallCount >= 2;
+    }
+
     #isValidPosition(x, y) {
-        return x >= 0 && x < this.#grid[0].length && y >= 0 && y < this.#grid.length;
+        // Check if position is within grid bounds
+        if (x < 0 || x >= this.#grid[0].length || y < 0 || y >= this.#grid.length) {
+            return false;
+        }
+
+        // Check if position is walkable (not a wall)
+        return this.#grid[y][x] === '0';
+    }
+
+    #findNearestValidPosition(x, y) {
+        const maxRadius = 5; // Maximum search radius
+        
+        // Check positions in expanding circles
+        for (let radius = 1; radius <= maxRadius; radius++) {
+            // Check all positions at current radius
+            for (let dx = -radius; dx <= radius; dx++) {
+                for (let dy = -radius; dy <= radius; dy++) {
+                    // Only check positions exactly at current radius
+                    if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
+                        const checkX = Math.round(x + dx);
+                        const checkY = Math.round(y + dy);
+                        
+                        if (this.#isValidPosition(checkX, checkY)) {
+                            return { x: checkX, y: checkY };
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null; // No valid position found within radius
     }
 
     #heuristic(x1, y1, x2, y2) {

@@ -5,6 +5,8 @@ class Game {
     #renderer = null;
     #labelRenderer = null;
     #player = null;
+    #dinnerLady = null;
+    #dinnerLadyAI = null;
     #logger = null;
     #levelManager = null;
     #uiManager = null;
@@ -165,25 +167,26 @@ class Game {
     }
 
     #animate() {
-        requestAnimationFrame(this.#animate.bind(this));
-        
+        requestAnimationFrame(() => this.#animate());
         const deltaTime = this.#clock.getDelta();
-        
+
         // Update game objects
         if (this.#player) {
             this.#player.update(deltaTime);
         }
-
+        if (this.#dinnerLadyAI) {
+            this.#dinnerLadyAI.update(this.#clock.getElapsedTime());
+        }
         if (this.#gameScene) {
             this.#gameScene.update(deltaTime);
         }
-        
+
         // Update camera position
         this.updateCameraPosition();
-        
+
         // Render scene
-        if (this.#renderer && this.#scene && this.#camera) {
-            this.#renderer.render(this.#scene, this.#camera);
+        this.#renderer.render(this.#scene, this.#camera);
+        if (this.#labelRenderer) {
             this.#labelRenderer.render(this.#scene, this.#camera);
         }
     }
@@ -399,7 +402,12 @@ class Game {
                         break;
                     case 'D':
                         this.#logger.info(`Found dinner lady position at (${x}, ${row})`);
-                        // TODO: Create dinner lady
+                        // Create dinner lady at her spawn position
+                        const dinnerLadyPos = { x: x * GRID_SCALE, z: row * GRID_SCALE };
+                        this.#dinnerLady = new DinnerLady(this);
+                        this.#dinnerLady.setPosition(dinnerLadyPos.x, dinnerLadyPos.z);
+                        // Initialize dinner lady AI
+                        this.#dinnerLadyAI = new DinnerLadyAI(this, this.#dinnerLady);
                         break;
                     case 'H':
                         this.#logger.info(`Found hiding spot at (${x}, ${row})`);
@@ -481,6 +489,14 @@ class Game {
         return null;
     }
 
+    getCurrentLevel() {
+        if (!this.#levelManager) {
+            this.#logger.warn('Level manager not initialized');
+            return null;
+        }
+        return this.#levelManager.getCurrentLevel();
+    }
+
     #onWindowResize() {
         if (!this.#isInitialized) return;
 
@@ -504,9 +520,47 @@ class Game {
     getUIManager() { return this.#uiManager; }
     getSaveManager() { return this.#saveManager; }
     getGameScene() { return this.#gameScene; }
+    getDinnerLady() { return this.#dinnerLady; }
 
     isInitialized() {
         return this.#isInitialized;
+    }
+
+    async start() {
+        if (!this.#isInitialized) {
+            this.#logger.error('Cannot start game: not initialized');
+            return;
+        }
+
+        this.#logger.info('Starting game...');
+        
+        // Ensure we have a default level loaded
+        if (!this.getCurrentLevel()) {
+            this.#logger.info('No level loaded, loading default level...');
+            const settings = this.#levelManager.getSettings();
+            await this.loadLevel(settings.defaultStartLevel);
+        }
+
+        // Ensure player is created
+        if (!this.#player) {
+            this.#logger.warn('Player not initialized during level load, creating now...');
+            this.#player = new Player(this);
+            const startPos = this.#levelManager.getPlayerStartPosition();
+            if (startPos) {
+                this.#player.setPosition(startPos.x, startPos.z);
+                this.#scene.add(this.#player.getMesh());
+            } else {
+                this.#logger.error('No valid start position found for player');
+            }
+        }
+
+        // Start animation loop if not already running
+        if (!this.#clock) {
+            this.#clock = new THREE.Clock();
+            this.#animate();
+        }
+
+        this.#logger.info('Game started successfully');
     }
 
     resume() {

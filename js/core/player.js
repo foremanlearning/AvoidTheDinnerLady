@@ -12,12 +12,16 @@ class Player {
     #inventory = [];
     #levelManager;
     #character;
+    #config;
 
     constructor(game) {
         this.#game = game;
         this.#logger = new Logger();
         this.#eventManager = EventManager.getInstance();
         this.#uiManager = UIManager.getInstance();
+        
+        // Load player AI configuration
+        this.#loadConfig();
         
         // Initialize player character
         this.#character = new MinecraftCharacter();
@@ -34,13 +38,34 @@ class Player {
         // Initialize stats
         this.#stats = {
             health: 100,
-            stamina: 100,
+            stamina: this.#config?.stamina?.max || 100,
             keys: 0,
             score: 0
         };
         
         this.#setupEventListeners();
         this.#updateUI();
+    }
+
+    async #loadConfig() {
+        try {
+            const response = await fetch('config/player.ai');
+            if (!response.ok) {
+                throw new Error('Failed to load player config');
+            }
+            this.#config = await response.json();
+            this.#logger.info('Loaded player config', this.#config);
+        } catch (error) {
+            this.#logger.error('Error loading player config:', error);
+            // Use default values if config fails to load
+            this.#config = {
+                movement: { speed: 5.0, rotationSpeed: 8.0 },
+                pathfinding: {
+                    wallAvoidance: { enabled: true, baseCost: 2.0, maxCost: 5.0 }
+                },
+                stamina: { max: 100, regenRate: 10.0 }
+            };
+        }
     }
 
     #setupEventListeners() {
@@ -100,7 +125,7 @@ class Player {
     }
 
     moveToPosition(x, z) {
-        const currentLevel = this.#game.getLevelManager().getCurrentLevel();
+        const currentLevel = this.#game.getCurrentLevel();
         if (!currentLevel || !currentLevel.grid) {
             this.#logger.error('No level grid available for pathfinding');
             return;
@@ -119,21 +144,38 @@ class Player {
             to: { x, z }
         });
 
+        // Convert world coordinates to grid coordinates
+        const GRID_SCALE = 2;
+        const currentGridX = Math.floor(currentPos.x / GRID_SCALE);
+        const currentGridZ = Math.floor(currentPos.z / GRID_SCALE);
+        const targetGridX = Math.floor(x / GRID_SCALE);
+        const targetGridZ = Math.floor(z / GRID_SCALE);
+
+        this.#logger.debug('Grid coordinates', {
+            from: { x: currentGridX, z: currentGridZ },
+            to: { x: targetGridX, z: targetGridZ }
+        });
+
         const pathfinder = Pathfinder.getInstance();
         const path = pathfinder.findPath(
             currentLevel.grid,
-            Math.round(currentPos.x),
-            Math.round(currentPos.z),
-            Math.round(x),
-            Math.round(z),
-            2 // Grid scale
+            currentGridX,
+            currentGridZ,
+            targetGridX,
+            targetGridZ
         );
 
         if (path) {
+            // Convert grid coordinates back to world coordinates
             this.#currentPath = path.map(pos => {
-                const [px, pz] = pos.split(',').map(Number);
-                return { x: px, z: pz };
+                const gridX = typeof pos === 'string' ? Number(pos.split(',')[0]) : pos.x;
+                const gridZ = typeof pos === 'string' ? Number(pos.split(',')[1]) : pos.y;
+                return {
+                    x: gridX * GRID_SCALE + GRID_SCALE / 2, // Center in the grid cell
+                    z: gridZ * GRID_SCALE + GRID_SCALE / 2
+                };
             });
+            
             this.#pathIndex = 0;
             this.#isMoving = true;
             
@@ -151,62 +193,57 @@ class Player {
     }
 
     update(deltaTime) {
-        if (this.#currentPath && this.#currentPath.length > 0 && this.#pathIndex < this.#currentPath.length) {
-            this.#isMoving = true;
-            const targetPos = this.#currentPath[this.#pathIndex];
-            
-            // Handle both string and object formats
-            let x, z;
-            if (typeof targetPos === 'string') {
-                [x, z] = targetPos.split(',').map(Number);
-            } else if (typeof targetPos === 'object') {
-                x = targetPos.x;
-                z = targetPos.z;
-            } else {
-                this.#logger.warn('Invalid target position format', { targetPos });
+        if (!this.#isMoving || !this.#currentPath || this.#pathIndex >= this.#currentPath.length) {
+            return;
+        }
+
+        const target = this.#currentPath[this.#pathIndex];
+        const currentPos = this.#cube.position;
+        
+        // Calculate movement based on config speed
+        const speed = this.#config?.movement?.speed || 5.0;
+        const moveSpeed = speed * deltaTime;
+        
+        const dx = target.x - currentPos.x;
+        const dz = target.z - currentPos.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+
+        if (distance < moveSpeed) {
+            // Reached current waypoint
+            this.#pathIndex++;
+            if (this.#pathIndex >= this.#currentPath.length) {
                 this.#isMoving = false;
-                this.#currentPath = [];
-                this.#pathIndex = 0;
+                this.#currentPath = null;
                 return;
             }
-            
-            const currentPos = this.#cube.position;
-            
-            // Calculate direction for character rotation
-            const dx = x - currentPos.x;
-            const dz = z - currentPos.z;
-            if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
-                const angle = Math.atan2(dx, dz);
-                this.#character.setRotation(angle);
-            }
-            
-            // Move towards target
-            const speed = 5;
-            const step = speed * deltaTime;
-            const distance = Math.sqrt(
-                Math.pow(x - currentPos.x, 2) + 
-                Math.pow(z - currentPos.z, 2)
-            );
-            
-            if (distance < step) {
-                this.#pathIndex++;
-                if (this.#pathIndex >= this.#currentPath.length) {
-                    this.#isMoving = false;
-                    this.#currentPath = [];
-                    this.#pathIndex = 0;
-                }
-            } else {
-                const ratio = step / distance;
-                currentPos.x += (x - currentPos.x) * ratio;
-                currentPos.z += (z - currentPos.z) * ratio;
-            }
         } else {
-            this.#isMoving = false;
+            // Move towards target
+            const moveX = (dx / distance) * moveSpeed;
+            const moveZ = (dz / distance) * moveSpeed;
+            
+            currentPos.x += moveX;
+            currentPos.z += moveZ;
+
+            // Update character rotation
+            const angle = Math.atan2(dx, dz);
+            const rotationSpeed = this.#config?.movement?.rotationSpeed || 8.0;
+            this.#cube.rotation.y = angle;
         }
-        
-        // Update character animation
-        this.#character.setMoving(this.#isMoving);
-        this.#character.update(deltaTime);
+
+        // Update stamina
+        if (this.#config?.stamina?.enabled) {
+            // Drain stamina while moving
+            if (this.#isMoving) {
+                const staminaCost = this.#config.stamina.drainRate * deltaTime;
+                this.#stats.stamina = Math.max(0, this.#stats.stamina - staminaCost);
+            } else {
+                // Only regenerate stamina when not moving and after delay
+                const regenAmount = this.#config.stamina.regenRate * deltaTime;
+                this.#stats.stamina = Math.min(this.#config.stamina.max, this.#stats.stamina + regenAmount);
+            }
+        }
+
+        this.#updateUI();
     }
 
     #checkForInteraction() {

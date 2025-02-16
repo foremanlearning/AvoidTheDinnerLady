@@ -204,4 +204,28 @@ class LevelManager {
     getSettings() {
         return this.#settings;
     }
+
+    getPlayerStartPosition() {
+        if (!this.#currentLevel || !this.#currentLevel.grid) {
+            this.#logger.error('No level loaded, cannot get player start position');
+            return null;
+        }
+
+        const GRID_SCALE = 2; // Match the scale used in Game.js
+        for (let row = 0; row < this.#currentLevel.grid.length; row++) {
+            const rowData = this.#currentLevel.grid[row];
+            for (let x = 0; x < rowData.length; x++) {
+                if (rowData[x] === 'P') {
+                    this.#logger.info(`Found player start position at (${x}, ${row})`);
+                    return {
+                        x: x * GRID_SCALE,
+                        z: row * GRID_SCALE
+                    };
+                }
+            }
+        }
+
+        this.#logger.error('No player start position (P) found in level grid');
+        return null;
+    }
 }

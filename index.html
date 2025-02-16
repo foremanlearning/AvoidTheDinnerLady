@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cube-A-Lot</title>
+    <title>Avoid the Dinner Lady</title>
     <style>
         body { 
             margin: 0;
@@ -32,122 +32,63 @@
             border-radius: 5px;
             font-family: monospace;
             font-size: 12px;
-            max-width: 80%;
+            max-width: 400px;
             max-height: 200px;
             overflow-y: auto;
             z-index: 1000;
         }
-        
+
         .player-label {
+            background-color: rgba(0, 255, 0, 0.7);
             color: white;
-            font-family: Arial, sans-serif;
+            padding: 2px 6px;
+            border-radius: 3px;
             font-size: 12px;
             pointer-events: none;
-            user-select: none;
-            z-index: 1000;
-            position: absolute;
         }
-        
-        .ui-panel {
-            position: fixed;
-            background: rgba(0,0,0,0.7);
-            color: #fff;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            z-index: 1000;
-        }
-        
-        #statsPanel {
-            top: 10px;
-            left: 10px;
-        }
-        
-        #inventoryPanel {
-            top: 10px;
-            right: 10px;
-            max-width: 200px;
-        }
-        
-        .inventory-item {
-            padding: 5px;
-            margin: 2px 0;
+
+        .dinner-lady-label {
+            background-color: rgba(255, 105, 180, 0.7);
+            color: white;
+            padding: 2px 6px;
             border-radius: 3px;
-            background: rgba(255,255,255,0.1);
-        }
-        
-        .modal {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.9);
-            color: #fff;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            z-index: 2000;
-        }
-        
-        .modal h2 {
-            margin-top: 0;
-        }
-        
-        .modal-buttons {
-            margin-top: 20px;
-        }
-        
-        .modal-button {
-            background: #4CAF50;
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 4px 2px;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-        
-        .modal-button:hover {
-            background: #45a049;
-        }
-        
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 24px;
+            font-size: 12px;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
     <div id="gameContainer">
-        <div class="loading">Loading...</div>
         <div id="debugConsole"></div>
-        <div id="statsPanel" class="ui-panel"></div>
-        <div id="inventoryPanel" class="ui-panel"></div>
-        <div id="gameOverModal" class="modal">
-            <h2>Game Over</h2>
-            <p id="gameOverMessage"></p>
-            <div class="modal-buttons">
-                <button class="modal-button" onclick="Game.getInstance().restart()">Try Again</button>
-            </div>
-        </div>
     </div>
 
-    <!-- Load Three.js and dependencies -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.min.js"></script>
+    <!-- Load Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Load utility classes -->
+    <script src="js/utils/logger.js"></script>
+    <script src="js/utils/eventManager.js"></script>
+    <script src="js/models/MinecraftCharacter.js"></script>
+    <script src="js/models/DinnerLadyCharacter.js"></script>
+    <script src="js/utils/pathfinder.js"></script>
+
+    <!-- Load managers -->
+    <script src="js/ui/uiManager.js"></script>
+    <script src="js/core/saveManager.js"></script>
+    <script src="js/core/levelManager.js"></script>
+
+    <!-- Load AI -->
+    <script src="js/ai/dinnerLadyAI.js"></script>
+
+    <!-- Load core game classes -->
+    <script src="js/core/player.js"></script>
+    <script src="js/core/dinnerLady.js"></script>
+    <script src="js/core/gameScene.js"></script>
+    <script src="js/core/game.js"></script>
+
     <script>
-        // Load CSS2DRenderer manually since the CDN version has issues
-        THREE.CSS2DObject = class CSS2DObject extends THREE.Object3D {
+        // CSS2DRenderer implementation
+        class CSS2DObject extends THREE.Object3D {
             constructor(element) {
                 super();
                 this.element = element || document.createElement('div');
@@ -172,152 +113,62 @@
                 this.domElement.style.top = '0';
                 this.domElement.style.left = '0';
                 this.domElement.style.pointerEvents = 'none';
-                this.cache = new WeakMap();
-            }
-
-            getSize() {
-                return {
-                    width: this.width,
-                    height: this.height
+                this.getSize = function () {
+                    return {
+                        width: this.width,
+                        height: this.height
+                    };
+                };
+                this.setSize = function (width, height) {
+                    this.width = width;
+                    this.height = height;
+                    this.domElement.style.width = width + 'px';
+                    this.domElement.style.height = height + 'px';
+                };
+                this.render = function (scene, camera) {
+                    scene.updateMatrixWorld();
+                    if (camera.parent === null) camera.updateMatrixWorld();
+                    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+                    this.domElement.innerHTML = '';
+                    scene.traverse((object) => {
+                        if (object instanceof CSS2DObject) {
+                            const element = object.element;
+                            const vector = new THREE.Vector3();
+                            object.updateMatrixWorld();
+                            vector.setFromMatrixPosition(object.matrixWorld);
+                            vector.project(camera);
+                            element.style.transform = 'translate(-50%,-50%) translate(' +
+                                (vector.x * this.width / 2 + this.width / 2) + 'px,' +
+                                (-vector.y * this.height / 2 + this.height / 2) + 'px)';
+                            if (this.domElement.children.length === 0) {
+                                this.domElement.appendChild(element);
+                            } else {
+                                let inserted = false;
+                                for (let i = 0; i < this.domElement.children.length; i++) {
+                                    if (vector.z >= 0 || i === this.domElement.children.length - 1) {
+                                        this.domElement.insertBefore(element, this.domElement.children[i]);
+                                        inserted = true;
+                                        break;
+                                    }
+                                }
+                                if (!inserted) this.domElement.appendChild(element);
+                            }
+                        }
+                    });
                 };
             }
+        };
 
-            setSize(width, height) {
-                this.width = width;
-                this.height = height;
-                this.domElement.style.width = width + 'px';
-                this.domElement.style.height = height + 'px';
-            }
+        THREE.CSS2DObject = CSS2DObject;
 
-            render(scene, camera) {
-                scene.updateMatrixWorld();
-                if (camera.parent === null) camera.updateMatrixWorld();
-
-                const cameraCSSMatrix = 'translateZ(' + this.getCameraCSSMatrix(camera) + 'px)';
-                const style = cameraCSSMatrix + ' ' + this.getObjectCSSMatrix(camera);
-
-                scene.traverse((object) => {
-                    if (object instanceof THREE.CSS2DObject) {
-                        if (this.cache.has(object)) {
-                            const cachedData = this.cache.get(object);
-                            if (cachedData.style === style) return;
-                        }
-
-                        object.onBeforeRender?.(this, scene, camera);
-
-                        const element = object.element;
-                        const rect = element.getBoundingClientRect();
-
-                        const objectData = {
-                            style: style,
-                            x: rect.left,
-                            y: rect.top,
-                            width: rect.width,
-                            height: rect.height
-                        };
-
-                        this.cache.set(object, objectData);
-
-                        element.style.transform = style;
-                        if (element.parentNode !== this.domElement) {
-                            this.domElement.appendChild(element);
-                        }
-
-                        object.onAfterRender?.(this, scene, camera);
-                    }
-                });
-            }
-
-            getCameraCSSMatrix(camera) {
-                const elements = camera.projectionMatrix.elements;
-                const matrix = 'matrix3d(' +
-                    epsilon(elements[0]) + ',' +
-                    epsilon(-elements[1]) + ',' +
-                    epsilon(elements[2]) + ',' +
-                    epsilon(elements[3]) + ',' +
-                    epsilon(elements[4]) + ',' +
-                    epsilon(-elements[5]) + ',' +
-                    epsilon(elements[6]) + ',' +
-                    epsilon(elements[7]) + ',' +
-                    epsilon(elements[8]) + ',' +
-                    epsilon(-elements[9]) + ',' +
-                    epsilon(elements[10]) + ',' +
-                    epsilon(elements[11]) + ',' +
-                    epsilon(elements[12]) + ',' +
-                    epsilon(-elements[13]) + ',' +
-                    epsilon(elements[14]) + ',' +
-                    epsilon(elements[15]) +
-                    ')';
-                return matrix;
-            }
-
-            getObjectCSSMatrix(camera) {
-                const matrix = camera.matrixWorldInverse;
-                const elements = matrix.elements;
-                return 'translate(-50%,-50%) matrix3d(' +
-                    epsilon(elements[0]) + ',' +
-                    epsilon(elements[1]) + ',' +
-                    epsilon(elements[2]) + ',' +
-                    epsilon(elements[3]) + ',' +
-                    epsilon(-elements[4]) + ',' +
-                    epsilon(-elements[5]) + ',' +
-                    epsilon(-elements[6]) + ',' +
-                    epsilon(-elements[7]) + ',' +
-                    epsilon(elements[8]) + ',' +
-                    epsilon(elements[9]) + ',' +
-                    epsilon(elements[10]) + ',' +
-                    epsilon(elements[11]) + ',' +
-                    epsilon(elements[12]) + ',' +
-                    epsilon(elements[13]) + ',' +
-                    epsilon(elements[14]) + ',' +
-                    epsilon(elements[15]) +
-                    ')';
-            }
-        }
-
-        function epsilon(value) {
-            return Math.abs(value) < 1e-10 ? 0 : value;
-        }
-    </script>
-
-    <!-- Load utility classes -->
-    <script src="js/utils/logger.js"></script>
-    <script src="js/utils/eventManager.js"></script>
-    <script src="js/models/MinecraftCharacter.js"></script>
-    <script src="js/models/DinnerLadyCharacter.js"></script>
-    <script src="js/utils/pathfinder.js"></script>
-
-    <!-- Load managers -->
-    <script src="js/ui/uiManager.js"></script>
-    <script src="js/core/saveManager.js"></script>
-    <script src="js/core/levelManager.js"></script>
-
-    <!-- Load core game classes -->
-    <script src="js/core/player.js"></script>
-    <script src="js/core/dinnerLady.js"></script>
-    <script src="js/core/gameScene.js"></script>
-    <script src="js/core/game.js"></script>
-
-    <script>
-        // Initialize game when page loads
-        window.addEventListener('load', async () => {
+        // Initialize game
+        document.addEventListener('DOMContentLoaded', async () => {
             try {
-                // Hide loading screen when game starts
-                const loadingScreen = document.querySelector('.loading');
-                if (loadingScreen) {
-                    loadingScreen.style.display = 'none';
-                }
-
                 const game = Game.getInstance();
                 await game.initialize();
+                game.start();
             } catch (error) {
                 console.error('Failed to start game:', error);
-                // Show error on loading screen
-                const loadingScreen = document.querySelector('.loading');
-                if (loadingScreen) {
-                    loadingScreen.textContent = 'Failed to load game';
-                    loadingScreen.style.color = 'red';
-                }
             }
         });
     </script>

@@ -1,0 +1,55 @@
+{
+    "movement": {
+        "speed": 5.0,
+        "rotationSpeed": 8.0,
+        "acceleration": 2.0,
+        "deceleration": 4.0
+    },
+    "pathfinding": {
+        "wallAvoidance": {
+            "enabled": true,
+            "baseCost": 2.0,
+            "maxCost": 5.0,
+            "checkRadius": 1
+        },
+        "cornerAvoidance": {
+            "enabled": true,
+            "extraCost": 3.0
+        },
+        "preferredDistance": {
+            "fromWalls": 1.5,
+            "fromObjects": 1.0
+        }
+    },
+    "interaction": {
+        "pickupRange": 1.5,
+        "actionRange": 2.0,
+        "hideSpotRange": 1.0
+    },
+    "stealth": {
+        "crouchSpeedMultiplier": 0.5,
+        "noiseRadius": {
+            "walking": 8.0,
+            "running": 12.0,
+            "crouching": 3.0
+        },
+        "visibilityModifiers": {
+            "standing": 1.0,
+            "crouching": 0.6,
+            "inShadow": 0.7,
+            "moving": 1.2
+        }
+    },
+    "stamina": {
+        "enabled": true,
+        "max": 100,
+        "drainRate": 20,
+        "regenRate": 10,
+        "regenDelay": 2.0
+    },
+    "debug": {
+        "showPath": true,
+        "showNoiseRadius": false,
+        "showInteractionRanges": false
+    }
+}

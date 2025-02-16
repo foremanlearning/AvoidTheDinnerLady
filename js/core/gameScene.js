@@ -18,6 +18,7 @@ class GameScene {
         this.#logger = Logger.getInstance();
         this.#scene = game.getScene();
         this.#camera = game.getCamera();
+        this.#player = game.getPlayer(); // Try to get player initially
         this.#setupTouchControls();
     }
 
@@ -102,18 +103,39 @@ class GameScene {
         this.#inputStartX = x;
         this.#inputStartY = y;
         this.#inputStartTime = Date.now();
+        this.#logger.info('Input started', {
+            x,
+            y,
+            time: this.#inputStartTime,
+            type: 'start'
+        });
     }
 
     #handleInputMove(x, y) {
-        if (!this.#isInputActive) return;
+        if (!this.#isInputActive) {
+            this.#logger.debug('Ignoring move event - input not active');
+            return;
+        }
 
         const deltaX = x - this.#lastInputX;
         const deltaY = y - this.#lastInputY;
+
+        this.#logger.debug('Input movement', {
+            deltaX,
+            deltaY,
+            currentX: x,
+            currentY: y,
+            type: 'move'
+        });
 
         // Update camera rotation based on drag
         if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
             this.#cameraAngle += deltaX * this.#cameraRotationSpeed;
             this.#updateCameraPosition();
+            this.#logger.debug('Camera rotated', {
+                angle: this.#cameraAngle,
+                type: 'camera'
+            });
         }
 
         this.#lastInputX = x;
@@ -121,16 +143,32 @@ class GameScene {
     }
 
     #handleInputEnd() {
-        if (!this.#isInputActive) return;
+        if (!this.#isInputActive) {
+            this.#logger.debug('Ignoring end event - input not active');
+            return;
+        }
 
         const deltaTime = Date.now() - this.#inputStartTime;
         const deltaX = this.#lastInputX - this.#inputStartX;
         const deltaY = this.#lastInputY - this.#inputStartY;
         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
+        this.#logger.info('Input ended', {
+            deltaTime,
+            distance,
+            deltaX,
+            deltaY,
+            type: 'end'
+        });
+
         // If it's a quick tap (less than 200ms) and minimal movement (less than 10px),
         // treat it as a click/tap for movement
         if (deltaTime < 200 && distance < 10) {
+            this.#logger.info('Quick tap detected - handling as movement', {
+                x: this.#lastInputX,
+                y: this.#lastInputY,
+                type: 'tap'
+            });
             this.#handleTapForMovement(this.#lastInputX, this.#lastInputY);
         }
 
@@ -146,6 +184,14 @@ class GameScene {
         mouse.x = (x / window.innerWidth) * 2 - 1;
         mouse.y = -(y / window.innerHeight) * 2 + 1;
 
+        this.#logger.debug('Converting screen to world coordinates', {
+            screenX: x,
+            screenY: y,
+            normalizedX: mouse.x,
+            normalizedY: mouse.y,
+            type: 'coordinate_conversion'
+        });
+
         // Update the picking ray with the camera and mouse position
         raycaster.setFromCamera(mouse, this.#camera);
 
@@ -155,10 +201,20 @@ class GameScene {
 
         // Find the point of intersection
         if (raycaster.ray.intersectPlane(plane, intersectPoint)) {
+            this.#logger.info('Found intersection point for movement', {
+                x: intersectPoint.x,
+                z: intersectPoint.z,
+                type: 'movement_target'
+            });
+            
             // Move the player to this point
             if (this.#player) {
                 this.#player.moveToPosition(intersectPoint.x, intersectPoint.z);
+            } else {
+                this.#logger.warn('No player available for movement');
             }
+        } else {
+            this.#logger.warn('No intersection found for movement');
         }
     }
 
@@ -181,9 +237,13 @@ class GameScene {
     }
 
     update(deltaTime) {
-        this.#player = this.#game.getPlayer();
-        if (this.#player) {
-            this.#updateCameraPosition();
+        // Update player reference in case it was created after GameScene
+        if (!this.#player) {
+            this.#player = this.#game.getPlayer();
+            if (this.#player) {
+                this.#logger.info('Player reference obtained in GameScene');
+            }
         }
+        this.#updateCameraPosition();
     }
 }
