@@ -3,6 +3,7 @@ class Player {
     #label;
     #stats;
     #currentPath = [];
+    #pathIndex = 0;
     #isMoving = false;
     #logger;
     #eventManager;
@@ -13,43 +14,31 @@ class Player {
 
     constructor(game) {
         this.#game = game;
-        this.#logger = Logger.getInstance();
-        this.#eventManager = new EventManager();
+        this.#logger = new Logger();
+        this.#eventManager = EventManager.getInstance();
         this.#uiManager = UIManager.getInstance();
         
-        // Create player mesh
-        const geometry = new THREE.BoxGeometry(0.8, 1, 0.8);
-        const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 }); // Bright green for visibility
+        // Initialize player mesh
+        const geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 }); // Green player
         this.#cube = new THREE.Mesh(geometry, material);
         this.#cube.castShadow = true;
         this.#cube.receiveShadow = true;
-        this.#cube.name = 'player';
         
         // Create player label
         const labelDiv = document.createElement('div');
         labelDiv.className = 'player-label';
         labelDiv.textContent = 'Player';
-        labelDiv.style.color = 'white';
-        labelDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        labelDiv.style.padding = '2px 6px';
-        labelDiv.style.borderRadius = '3px';
-        labelDiv.style.fontSize = '12px';
         this.#label = new THREE.CSS2DObject(labelDiv);
         this.#label.position.set(0, 1.5, 0);
         this.#cube.add(this.#label);
 
         // Initialize stats
         this.#stats = {
-            hp: 100,
-            maxHp: 100,
-            level: 1,
-            xp: 0,
-            maxXp: 100,
-            floor: 1,
-            strength: 10,
-            dexterity: 10,
-            intelligence: 10,
-            constitution: 10
+            health: 100,
+            stamina: 100,
+            keys: 0,
+            score: 0
         };
         
         this.#setupEventListeners();
@@ -84,118 +73,122 @@ class Player {
         }
     }
 
-    setPosition(x, y) {
+    setPosition(x, z) {
+        this.#logger.info(`Setting player position to (${x}, ${z})`);
+        
+        // Update cube position
         if (this.#cube) {
-            this.#cube.position.set(x, 0.5, y);
-            this.#logger.info(`Setting player position to (${x}, 0.5, ${y})`);
-        }
-    }
-
-    #moveAlongPath() {
-        if (this.#currentPath.length === 0) {
-            this.#isMoving = false;
-            return;
-        }
-
-        this.#isMoving = true;
-        const nextPoint = this.#currentPath[0];
-        const targetX = nextPoint.x;
-        const targetZ = nextPoint.y;
-        
-        // Calculate distance to target
-        const distance = new THREE.Vector3(targetX, this.#cube.position.y, targetZ)
-            .distanceTo(this.#cube.position);
+            this.#cube.position.set(x, 0.5, z);
             
-        if (distance < 0.1) {
-            this.#currentPath.shift();
-            if (this.#currentPath.length > 0) {
-                requestAnimationFrame(() => this.#moveAlongPath());
-            } else {
-                this.#isMoving = false;
+            // Update camera to follow player
+            if (this.#game && typeof this.#game.updateCameraPosition === 'function') {
+                this.#game.updateCameraPosition(x, z);
             }
-            return;
         }
         
-        // Move towards target with smooth interpolation
-        const speed = 0.1;
-        this.#cube.position.x += (targetX - this.#cube.position.x) * speed;
-        this.#cube.position.z += (targetZ - this.#cube.position.z) * speed;
-        
-        requestAnimationFrame(() => this.#moveAlongPath());
+        // Update label position
+        if (this.#label) {
+            this.#label.position.set(x, 1.5, z);
+        }
     }
 
     moveTo(point) {
-        // Reset movement state
-        this.#isMoving = false;
-        this.#currentPath = [];
-
-        const levelManager = this.#game.getLevelManager();
-        const currentLevel = levelManager.getCurrentLevel();
-        if (!currentLevel) {
-            this.#logger.error('No level data available');
+        this.#logger.debug('Moving to point', { point });
+        if (!point || typeof point.x === 'undefined' || typeof point.z === 'undefined') {
+            this.#logger.warn('Invalid point provided to moveTo', { point });
             return;
         }
+        this.moveToPosition(point.x, point.z);
+    }
+
+    moveToPosition(x, z) {
+        const currentLevel = this.#game.getLevelManager().getCurrentLevel();
+        if (!currentLevel || !currentLevel.grid) {
+            this.#logger.error('No level grid available for pathfinding');
+            return;
+        }
+
+        if (typeof x !== 'number' || typeof z !== 'number') {
+            this.#logger.warn('Invalid coordinates provided to moveToPosition', { x, z });
+            return;
+        }
+
+        // Get current position
+        const currentPos = this.#cube.position;
         
-        const grid = currentLevel.grid;
-        const gridSize = grid.length;
-        
-        // Convert world coordinates to grid coordinates
-        const gridX = Math.floor(point.x);
-        const gridZ = Math.floor(point.z);
-        
-        // Get current player position in grid coordinates
-        const currentGridX = Math.floor(this.#cube.position.x);
-        const currentGridZ = Math.floor(this.#cube.position.z);
-        
-        this.#logger.debug('Moving from', { currentGridX, currentGridZ, to: { gridX, gridZ }});
-        
-        // Find path using pathfinder
+        this.#logger.debug('Moving player', {
+            from: { x: currentPos.x, z: currentPos.z },
+            to: { x, z }
+        });
+
         const pathfinder = Pathfinder.getInstance();
-        const path = pathfinder.findPath(grid, currentGridX, currentGridZ, gridX, gridZ);
-        
-        if (path && path.length > 0) {
-            this.#currentPath = path;
-            this.#logger.debug('Path found', { path: this.#currentPath });
+        const path = pathfinder.findPath(
+            currentLevel.grid,
+            Math.round(currentPos.x),
+            Math.round(currentPos.z),
+            Math.round(x),
+            Math.round(z),
+            2 // Grid scale
+        );
+
+        if (path) {
+            this.#currentPath = path.map(pos => {
+                const [px, pz] = pos.split(',').map(Number);
+                return { x: px, z: pz };
+            });
+            this.#pathIndex = 0;
             this.#isMoving = true;
-            this.#moveAlongPath();
+            
+            this.#logger.debug('Path found', { 
+                path: this.#currentPath,
+                startPos: { x: currentPos.x, z: currentPos.z },
+                targetPos: { x, z }
+            });
         } else {
-            this.#logger.warn('No valid path found to destination');
+            this.#logger.warn('No valid path found to destination', {
+                from: { x: currentPos.x, z: currentPos.z },
+                to: { x, z }
+            });
         }
     }
 
-    update() {
-        if (!this.#isMoving || this.#currentPath.length === 0) {
-            this.#isMoving = false;  // Ensure state is consistent
-            return;
+    update(deltaTime) {
+        if (!deltaTime) {
+            return; // Skip update if no deltaTime provided
         }
 
-        const target = this.#currentPath[0];
-        const position = this.#cube.position;
-        const moveSpeed = GameConfig.player.moveSpeed;
-
-        // Calculate distance to target
-        const distanceToTarget = position.distanceTo(new THREE.Vector3(target.x, target.y, target.z));
-
-        if (distanceToTarget < moveSpeed) {
-            // We've reached the current waypoint
-            position.set(target.x, target.y, target.z);
-            this.#currentPath.shift();
-            
-            if (this.#currentPath.length === 0) {
+        if (this.#isMoving && this.#currentPath && this.#pathIndex < this.#currentPath.length) {
+            const target = this.#currentPath[this.#pathIndex];
+            if (!target) {
+                this.#logger.warn('Invalid target in path');
                 this.#isMoving = false;
-                this.#logger.debug('Reached destination');
-                this.#checkForInteraction();
+                this.#currentPath = null;
+                return;
             }
-        } else {
-            // Move towards target
-            const direction = new THREE.Vector3()
-                .subVectors(new THREE.Vector3(target.x, target.y, target.z), position)
-                .normalize();
-            
-            position.add(direction.multiplyScalar(moveSpeed));
-        }
 
-        this.#updateUI();
+            const dx = target.x - this.#cube.position.x;
+            const dz = target.z - this.#cube.position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+
+            if (distance < 0.1) { // Close enough to target
+                this.#pathIndex++;
+                if (this.#pathIndex >= this.#currentPath.length) {
+                    this.#isMoving = false;
+                    this.#currentPath = null;
+                    this.#logger.debug('Reached destination');
+                }
+            } else {
+                // Move towards target
+                const speed = 5 * deltaTime; // Units per second
+                const moveX = (dx / distance) * speed;
+                const moveZ = (dz / distance) * speed;
+                
+                this.setPosition(
+                    this.#cube.position.x + moveX,
+                    this.#cube.position.z + moveZ
+                );
+            }
+        }
     }
 
     #checkForInteraction() {
@@ -276,45 +269,26 @@ class Player {
     }
 
     takeDamage(amount) {
-        this.#stats.hp = Math.max(0, this.#stats.hp - amount);
+        this.#stats.health = Math.max(0, this.#stats.health - amount);
         this.#updateUI();
         
-        if (this.#stats.hp <= 0) {
+        if (this.#stats.health <= 0) {
             this.#eventManager.emit('playerDeath');
         }
     }
 
     heal(amount) {
-        this.#stats.hp = Math.min(this.#stats.maxHp, this.#stats.hp + amount);
+        this.#stats.health = Math.min(100, this.#stats.health + amount);
         this.#updateUI();
     }
 
     gainXP(amount) {
-        this.#stats.xp += amount;
-        while (this.#stats.xp >= this.#stats.maxXp) {
-            this.levelUp();
-        }
+        this.#stats.score += amount;
         this.#updateUI();
     }
 
     levelUp() {
-        this.#stats.level++;
-        this.#stats.xp -= this.#stats.maxXp;
-        this.#stats.maxXp = Math.floor(this.#stats.maxXp * 1.5);
-        this.#stats.maxHp += 10;
-        this.#stats.hp = this.#stats.maxHp;
-        
-        this.#eventManager.emit('showModal', {
-            title: 'Level Up!',
-            content: `Congratulations! You reached level ${this.#stats.level}!
-                     Your maximum HP has increased to ${this.#stats.maxHp}.`,
-            buttons: [{
-                text: 'Continue',
-                action: () => {}
-            }]
-        });
-        
-        this.#updateUI();
+        // Not implemented
     }
 
     #updateUI() {

@@ -30,13 +30,19 @@ class LevelManager {
 
     async initialize() {
         try {
-            // Load level configuration
+            this.#logger.info('Initializing level manager...');
+            
+            // Load level settings
             const response = await fetch('levels/levelManager.json');
-            const config = await response.json();
-            
-            this.#levels = config.levels;
-            this.#settings = config.settings;
-            
+            if (!response.ok) {
+                throw new Error('Failed to load level settings');
+            }
+
+            this.#settings = await response.json();
+            if (!this.#validateSettings(this.#settings)) {
+                throw new Error('Invalid level settings format');
+            }
+
             // Load saved progress from localStorage
             this.#loadProgress();
             
@@ -48,40 +54,63 @@ class LevelManager {
             this.#logger.info('LevelManager initialized successfully');
             return true;
         } catch (error) {
-            this.#logger.error('Failed to initialize LevelManager:', error);
-            return false;
+            this.#logger.error('Failed to initialize level manager:', error);
+            throw error;
         }
     }
 
     async loadLevel(levelId) {
         try {
-            const levelConfig = this.#levels.find(l => l.id === levelId);
-            if (!levelConfig) {
-                throw new Error(`Level ${levelId} not found`);
+            this.#logger.debug('Loading level', { levelId });
+            
+            // If levelId is a number, convert it to the tutorial level ID for level 0
+            if (typeof levelId === 'number' && levelId === 0) {
+                levelId = 'tutorial';
             }
 
-            if (!this.#playerProgress.unlockedLevels.has(levelId)) {
-                throw new Error(`Level ${levelId} is locked`);
+            // Get level info from settings
+            const levelInfo = this.#settings.levels.find(level => level.id === levelId);
+            if (!levelInfo) {
+                throw new Error(`Level ${levelId} not found in settings`);
             }
 
-            // Load level data
-            const response = await fetch(`levels/${levelConfig.file}`);
+            // Load level data from file
+            const levelPath = `levels/${levelInfo.file}`;
+            this.#logger.debug('Loading level from path', { levelPath });
+            
+            const response = await fetch(levelPath);
+            if (!response.ok) {
+                throw new Error(`Failed to load level file: ${levelPath}`);
+            }
+
             const levelData = await response.json();
+            if (!this.#validateLevelData(levelData)) {
+                throw new Error('Invalid level data format');
+            }
 
             this.#currentLevel = {
-                ...levelConfig,
+                ...levelInfo,
                 ...levelData
             };
 
-            this.#playerProgress.currentLevelId = levelId;
-            this.#saveProgress();
-
-            this.#logger.info(`Loaded level: ${levelConfig.name}`);
+            this.#logger.info('Level loaded successfully', { levelId });
             return this.#currentLevel;
         } catch (error) {
             this.#logger.error('Failed to load level:', error);
-            return null;
+            throw error;
         }
+    }
+
+    #validateLevelData(data) {
+        return (
+            data &&
+            typeof data === 'object' &&
+            Array.isArray(data.grid) &&
+            typeof data.width === 'number' &&
+            typeof data.height === 'number' &&
+            data.grid.length > 0 &&
+            data.grid[0].length > 0
+        );
     }
 
     getCurrentLevel() {
@@ -93,7 +122,7 @@ class LevelManager {
     }
 
     getAllLevels() {
-        return this.#levels.map(level => ({
+        return this.#settings.levels.map(level => ({
             ...level,
             unlocked: this.#playerProgress.unlockedLevels.has(level.id),
             highScore: this.#playerProgress.highScores[level.id] || 0
@@ -101,9 +130,9 @@ class LevelManager {
     }
 
     async unlockNextLevel() {
-        const currentIndex = this.#levels.findIndex(l => l.id === this.#currentLevel.id);
-        if (currentIndex < this.#levels.length - 1) {
-            const nextLevel = this.#levels[currentIndex + 1];
+        const currentIndex = this.#settings.levels.findIndex(l => l.id === this.#currentLevel.id);
+        if (currentIndex < this.#settings.levels.length - 1) {
+            const nextLevel = this.#settings.levels[currentIndex + 1];
             this.#playerProgress.unlockedLevels.add(nextLevel.id);
             this.#saveProgress();
             return nextLevel;
@@ -120,7 +149,7 @@ class LevelManager {
         this.#saveProgress();
 
         // Check if any levels should be unlocked
-        this.#levels.forEach(level => {
+        this.#settings.levels.forEach(level => {
             if (!this.#playerProgress.unlockedLevels.has(level.id) && 
                 this.#playerProgress.totalScore >= level.requiredScore) {
                 this.#playerProgress.unlockedLevels.add(level.id);
@@ -153,6 +182,23 @@ class LevelManager {
         } catch (error) {
             this.#logger.error('Failed to save progress:', error);
         }
+    }
+
+    #validateSettings(settings) {
+        return (
+            settings &&
+            typeof settings === 'object' &&
+            Array.isArray(settings.levels) &&
+            settings.levels.length > 0 &&
+            settings.levels.every(level =>
+                level.id &&
+                level.name &&
+                level.file &&
+                typeof level.difficulty === 'number' &&
+                typeof level.unlocked === 'boolean' &&
+                typeof level.requiredScore === 'number'
+            )
+        );
     }
 
     getSettings() {

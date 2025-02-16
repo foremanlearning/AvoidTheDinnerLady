@@ -1,0 +1,13 @@
+{
+  "name": "avoid-the-dinner-lady",
+  "version": "1.0.0",
+  "description": "Game testing suite",
+  "scripts": {
+    "test": "node test/gameTest.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "selenium-webdriver": "^4.0.0-beta.4",
+    "chromedriver": "^91.0.0"
+  }
+}

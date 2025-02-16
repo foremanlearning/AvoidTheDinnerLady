@@ -1,15 +1,11 @@
 class Logger {
     static #instance = null;
-    #consoleElement;
-    #logLevel = 'info'; // debug, info, warn, error
-    #lastLogTime = new Map();
-    #throttleInterval = 1000; // 1 second
+    #logLevel = 'debug'; // Default log level
 
     constructor() {
         if (Logger.#instance) {
             return Logger.#instance;
         }
-        this.#consoleElement = document.getElementById('debugConsole');
         Logger.#instance = this;
     }
 
@@ -21,58 +17,72 @@ class Logger {
     }
 
     setLogLevel(level) {
-        this.#logLevel = level;
+        if (['debug', 'info', 'warn', 'error'].includes(level)) {
+            this.#logLevel = level;
+        }
     }
 
-    #shouldLog(type) {
+    #shouldLog(level) {
         const levels = {
             'debug': 0,
             'info': 1,
             'warn': 2,
             'error': 3
         };
-        return levels[type] >= levels[this.#logLevel];
+        return levels[level] >= levels[this.#logLevel];
     }
 
-    #isThrottled(message, type) {
-        const key = `${type}:${message}`;
-        const now = Date.now();
-        const lastTime = this.#lastLogTime.get(key) || 0;
-
-        if (now - lastTime < this.#throttleInterval) {
-            return true;
-        }
-
-        this.#lastLogTime.set(key, now);
-        return false;
-    }
-
-    log(message, type = 'info') {
-        if (!this.#shouldLog(type)) return;
-        if (this.#isThrottled(message, type)) return;
+    #log(level, message, data = null) {
+        if (!this.#shouldLog(level)) return;
 
         const timestamp = new Date().toLocaleTimeString();
-        const formattedMessage = `[${timestamp}] [${type}] ${message}`;
-        
-        console.log(formattedMessage);
-        
-        if (GameConfig.debug && this.#consoleElement) {
-            const messageElement = document.createElement('div');
-            messageElement.textContent = formattedMessage;
-            messageElement.className = `log-${type}`;
-            this.#consoleElement.appendChild(messageElement);
-            
-            // Keep only last 50 messages
-            while (this.#consoleElement.children.length > 50) {
-                this.#consoleElement.removeChild(this.#consoleElement.firstChild);
-            }
-            
-            this.#consoleElement.scrollTop = this.#consoleElement.scrollHeight;
+        const logMessage = `[${timestamp}] [${level}] ${message}`;
+
+        switch (level) {
+            case 'debug':
+                if (data) {
+                    console.debug(logMessage, data);
+                } else {
+                    console.debug(logMessage);
+                }
+                break;
+            case 'info':
+                if (data) {
+                    console.info(logMessage, data);
+                } else {
+                    console.info(logMessage);
+                }
+                break;
+            case 'warn':
+                if (data) {
+                    console.warn(logMessage, data);
+                } else {
+                    console.warn(logMessage);
+                }
+                break;
+            case 'error':
+                if (data) {
+                    console.error(logMessage, data);
+                } else {
+                    console.error(logMessage);
+                }
+                break;
         }
     }
 
-    info(message) { this.log(message, 'info'); }
-    warn(message) { this.log(message, 'warn'); }
-    error(message) { this.log(message, 'error'); }
-    debug(message) { this.log(message, 'debug'); }
+    debug(message, data = null) {
+        this.#log('debug', message, data);
+    }
+
+    info(message, data = null) {
+        this.#log('info', message, data);
+    }
+
+    warn(message, data = null) {
+        this.#log('warn', message, data);
+    }
+
+    error(message, data = null) {
+        this.#log('error', message, data);
+    }
 }

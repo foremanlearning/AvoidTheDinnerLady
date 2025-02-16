@@ -13,6 +13,7 @@ class PathNode {
 class Pathfinder {
     static #instance = null;
     #logger;
+    #grid;
 
     constructor() {
         if (Pathfinder.#instance) {
@@ -29,47 +30,54 @@ class Pathfinder {
         return Pathfinder.#instance;
     }
 
-    findPath(grid, startX, startY, endX, endY) {
-        // Validate input coordinates
-        if (!this.#isValidPosition(grid, startX, startY) || !this.#isValidPosition(grid, endX, endY)) {
-            this.#logger.warn('Start or end position is not valid');
+    findPath(grid, startX, startY, endX, endY, gridScale = 2) {
+        this.#grid = grid; // Store grid for use in isWalkable
+
+        // Convert from world coordinates to grid coordinates
+        startX = Math.floor(startX / gridScale);
+        startY = Math.floor(startY / gridScale);
+        endX = Math.floor(endX / gridScale);
+        endY = Math.floor(endY / gridScale);
+
+        // Validate coordinates
+        if (!this.isWalkable(startX, startY) || !this.isWalkable(endX, endY)) {
+            this.#logger.warn('Start or end position is not valid', { startX, startY, endX, endY });
             return null;
         }
 
-        // Calculate clearance values for all walkable cells
-        const clearance = this.#calculateClearance(grid);
-
-        // Check if position is walkable
-        const isWalkable = (x, y) => {
-            if (!this.#isValidPosition(grid, x, y)) return false;
-            return grid[y][x] === 1;
-        };
-
-        // Check if start and end positions are walkable
-        if (!isWalkable(startX, startY) || !isWalkable(endX, endY)) {
-            this.#logger.warn('Start or end position is not walkable');
-            return null;
-        }
-
-        const openSet = new Set();
+        const openSet = new Set([`${startX},${startY}`]);
         const closedSet = new Set();
         const cameFrom = new Map();
         const gScore = new Map();
         const fScore = new Map();
 
-        const startNode = `${startX},${startY}`;
-        openSet.add(startNode);
-        gScore.set(startNode, 0);
-        fScore.set(startNode, this.#heuristic(startX, startY, endX, endY));
+        gScore.set(`${startX},${startY}`, 0);
+        fScore.set(`${startX},${startY}`, this.#heuristic(startX, startY, endX, endY));
 
         while (openSet.size > 0) {
             let current = this.#getLowestFScore(openSet, fScore);
+            
+            // Ensure current is a string coordinate
+            if (typeof current !== 'string') {
+                // Handle both object {x,y} and string 'x,y' formats
+                current = typeof current === 'object' ? `${current.x},${current.y}` : String(current);
+            }
+
             const [currentX, currentY] = current.split(',').map(Number);
 
             if (currentX === endX && currentY === endY) {
                 const path = this.#reconstructPath(cameFrom, current);
-                this.#logger.debug('Path found', { path });
-                return path;
+                // Convert path back to world coordinates
+                const worldPath = path.map(pos => {
+                    // Handle both object and string formats
+                    if (typeof pos === 'object') {
+                        return `${pos.x * gridScale},${pos.y * gridScale}`;
+                    }
+                    const [x, y] = pos.split(',').map(Number);
+                    return `${x * gridScale},${y * gridScale}`;
+                });
+                this.#logger.debug('Path found', { worldPath });
+                return worldPath;
             }
 
             openSet.delete(current);
@@ -78,8 +86,8 @@ class Pathfinder {
             // Check all neighbors (no diagonals)
             const neighbors = [
                 [0, 1],  // up
-                [0, -1], // down
                 [1, 0],  // right
+                [0, -1], // down
                 [-1, 0]  // left
             ];
 
@@ -87,20 +95,12 @@ class Pathfinder {
                 const newX = currentX + dx;
                 const newY = currentY + dy;
 
-                if (!isWalkable(newX, newY)) continue;
+                if (!this.isWalkable(newX, newY)) continue;
 
                 const neighbor = `${newX},${newY}`;
                 if (closedSet.has(neighbor)) continue;
 
-                // Base movement cost
-                let movementCost = 1;
-                
-                // Add cost for being close to walls (inverse of clearance)
-                const clearanceValue = clearance[newY][newX];
-                const clearanceCost = 1 / (clearanceValue + 1); // Add 1 to avoid division by zero
-                movementCost += clearanceCost;
-
-                const tentativeGScore = gScore.get(current) + movementCost;
+                const tentativeGScore = gScore.get(current) + 1;
 
                 if (!openSet.has(neighbor)) {
                     openSet.add(neighbor);
@@ -114,8 +114,14 @@ class Pathfinder {
             }
         }
 
-        this.#logger.warn('No valid path found');
+        this.#logger.warn('No path found');
         return null;
+    }
+
+    isWalkable(x, y) {
+        // Check if position is walkable
+        if (!this.#isValidPosition(x, y)) return false;
+        return this.#grid[y][x] !== '1'; // Check for non-wall tiles
     }
 
     #calculateClearance(grid) {
@@ -126,7 +132,7 @@ class Pathfinder {
         // For each walkable cell, calculate its clearance value
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
-                if (grid[y][x] === 1) { // If walkable
+                if (grid[y][x] !== '1') { // If walkable
                     // Count empty spaces in all directions
                     let minClearance = Number.MAX_VALUE;
                     
@@ -140,7 +146,7 @@ class Pathfinder {
                             let checkY = y + dy;
                             
                             // Keep going until we hit a wall or boundary
-                            while (this.#isValidPosition(grid, checkX, checkY) && grid[checkY][checkX] === 1) {
+                            while (this.#isValidPosition(checkX, checkY) && grid[checkY][checkX] !== '1') {
                                 distance++;
                                 checkX += dx;
                                 checkY += dy;
@@ -158,8 +164,8 @@ class Pathfinder {
         return clearance;
     }
 
-    #isValidPosition(grid, x, y) {
-        return x >= 0 && x < grid[0].length && y >= 0 && y < grid.length;
+    #isValidPosition(x, y) {
+        return x >= 0 && x < this.#grid[0].length && y >= 0 && y < this.#grid.length;
     }
 
     #heuristic(x1, y1, x2, y2) {

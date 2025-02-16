@@ -1,25 +1,24 @@
 class Game {
     static #instance = null;
-    #scene;
-    #camera;
-    #renderer;
-    #labelRenderer;
-    #logger;
-    #eventManager;
+    #scene = null;
+    #camera = null;
+    #renderer = null;
+    #labelRenderer = null;
+    #player = null;
+    #logger = null;
+    #levelManager = null;
+    #uiManager = null;
+    #saveManager = null;
+    #gameScene = null;
+    #clock = null;
     #isInitialized = false;
-    #player;
-    #gameScene;
-    #levelManager;
-    #uiManager;
-    #saveManager;
 
     constructor() {
         if (Game.#instance) {
             return Game.#instance;
         }
-        this.#logger = new Logger();
-        this.#eventManager = new EventManager();
         Game.#instance = this;
+        this.#logger = Logger.getInstance();
     }
 
     static getInstance() {
@@ -29,25 +28,21 @@ class Game {
         return Game.#instance;
     }
 
+    #initializeManagers() {
+        this.#uiManager = UIManager.getInstance();
+        this.#saveManager = SaveManager.getInstance();
+        this.#levelManager = LevelManager.getInstance();
+        return this.#levelManager.initialize();
+    }
+
     async initialize() {
-        if (this.#isInitialized) {
-            this.#logger.warn('Game already initialized');
-            return;
-        }
-
-        this.#logger.info('Initializing game...');
-
         try {
+            this.#logger.info('Initializing game...');
+            
             // Initialize managers
             this.#logger.info('Initializing managers...');
-            this.#uiManager = UIManager.getInstance();
-            this.#saveManager = SaveManager.getInstance();
-            this.#levelManager = LevelManager.getInstance();
-
-            // Initialize level manager
-            this.#logger.info('Initializing level manager...');
-            await this.#levelManager.initialize();
-
+            await this.#initializeManagers();
+            
             // Initialize Three.js components
             this.#logger.info('Setting up Three.js scene...');
             this.#scene = new THREE.Scene();
@@ -70,34 +65,27 @@ class Game {
             if (!container) {
                 throw new Error('Game container not found');
             }
-
-            // Set up WebGL renderer
-            this.#renderer = new THREE.WebGLRenderer({ 
-                antialias: true,
-                alpha: true
-            });
+            
+            // Initialize renderer
+            this.#renderer = new THREE.WebGLRenderer({ antialias: true });
             this.#renderer.setSize(window.innerWidth, window.innerHeight);
             this.#renderer.shadowMap.enabled = true;
-            this.#renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             container.appendChild(this.#renderer.domElement);
-
-            // Set up CSS2D renderer for labels
+            
+            // Initialize CSS2D renderer
             this.#labelRenderer = new THREE.CSS2DRenderer();
             this.#labelRenderer.setSize(window.innerWidth, window.innerHeight);
             this.#labelRenderer.domElement.style.position = 'absolute';
             this.#labelRenderer.domElement.style.top = '0';
             this.#labelRenderer.domElement.style.pointerEvents = 'none';
             container.appendChild(this.#labelRenderer.domElement);
-
-            // Initialize game scene
-            this.#logger.info('Initializing game scene...');
+            
+            // Initialize game scene for input handling
             this.#gameScene = new GameScene(this);
             
             // Load default level
             this.#logger.info('Loading default level...');
-            const settings = this.#levelManager.getSettings();
-            this.#logger.info('Default level:', settings.defaultStartLevel);
-            const levelData = await this.#levelManager.loadLevel(settings.defaultStartLevel);
+            const levelData = await this.#levelManager.loadLevel(0);
             if (!levelData) {
                 throw new Error('Failed to load default level');
             }
@@ -106,17 +94,111 @@ class Game {
             this.#logger.info('Creating game objects...');
             await this.#createGameObjects(levelData, GRID_SCALE);
 
-            window.addEventListener('resize', this.#onWindowResize.bind(this));
+            // Set up event listeners for input
+            this.#setupEventListeners(container);
+
+            // Start animation loop
+            this.#clock = new THREE.Clock();
+            this.#animate();
             
             this.#isInitialized = true;
             this.#logger.info('Game initialized successfully');
-            
-            // Start game loop
-            this.#animate();
+            return true;
         } catch (error) {
             this.#logger.error('Failed to initialize game:', error);
             throw error;
         }
+    }
+
+    #setupEventListeners(container) {
+        // Touch events
+        container.addEventListener('touchstart', this.#onTouchStart.bind(this), false);
+        container.addEventListener('touchmove', this.#onTouchMove.bind(this), false);
+        container.addEventListener('touchend', this.#onTouchEnd.bind(this), false);
+
+        // Mouse events
+        container.addEventListener('mousedown', this.#onMouseDown.bind(this), false);
+        container.addEventListener('mousemove', this.#onMouseMove.bind(this), false);
+        container.addEventListener('mouseup', this.#onMouseUp.bind(this), false);
+
+        // Window resize
+        window.addEventListener('resize', this.#onWindowResize.bind(this));
+    }
+
+    #onTouchStart(event) {
+        event.preventDefault();
+        if (this.#gameScene) {
+            this.#gameScene.onTouchStart(event);
+        }
+    }
+
+    #onTouchMove(event) {
+        event.preventDefault();
+        if (this.#gameScene) {
+            this.#gameScene.onTouchMove(event);
+        }
+    }
+
+    #onTouchEnd(event) {
+        event.preventDefault();
+        if (this.#gameScene) {
+            this.#gameScene.onTouchEnd(event);
+        }
+    }
+
+    #onMouseDown(event) {
+        if (this.#gameScene) {
+            this.#gameScene.onMouseDown(event);
+        }
+    }
+
+    #onMouseMove(event) {
+        if (this.#gameScene) {
+            this.#gameScene.onMouseMove(event);
+        }
+    }
+
+    #onMouseUp(event) {
+        if (this.#gameScene) {
+            this.#gameScene.onMouseUp(event);
+        }
+    }
+
+    #animate() {
+        requestAnimationFrame(this.#animate.bind(this));
+        
+        const deltaTime = this.#clock.getDelta();
+        
+        // Update game objects
+        if (this.#player) {
+            this.#player.update(deltaTime);
+        }
+
+        if (this.#gameScene) {
+            this.#gameScene.update(deltaTime);
+        }
+        
+        // Update camera position
+        this.updateCameraPosition();
+        
+        // Render scene
+        if (this.#renderer && this.#scene && this.#camera) {
+            this.#renderer.render(this.#scene, this.#camera);
+            this.#labelRenderer.render(this.#scene, this.#camera);
+        }
+    }
+
+    updateCameraPosition() {
+        if (!this.#camera || !this.#player) return;
+
+        const playerPos = this.#player.getPosition();
+        const cameraHeight = 20;
+        const cameraOffset = 20;
+
+        this.#camera.position.x = playerPos.x;
+        this.#camera.position.y = cameraHeight;
+        this.#camera.position.z = playerPos.z + cameraOffset;
+        this.#camera.lookAt(playerPos.x, 0, playerPos.z);
     }
 
     #positionCamera(levelData) {
@@ -388,29 +470,15 @@ class Game {
         return false;
     }
 
-    #animate() {
-        if (!this.#isInitialized) return;
-
-        requestAnimationFrame(() => this.#animate());
-
-        try {
-            // Update game state
-            if (this.#player) {
-                this.#player.update();
+    getLevelGrid() {
+        if (this.#levelManager) {
+            const currentLevel = this.#levelManager.getCurrentLevel();
+            if (currentLevel && currentLevel.grid) {
+                return currentLevel.grid;
             }
-
-            if (this.#gameScene) {
-                this.#gameScene.update();
-            }
-
-            // Render the scene
-            this.#renderer.render(this.#scene, this.#camera);
-            if (this.#labelRenderer) {
-                this.#labelRenderer.render(this.#scene, this.#camera);
-            }
-        } catch (error) {
-            this.#logger.error('Error in animation loop:', error);
         }
+        this.#logger.warn('No level grid available');
+        return null;
     }
 
     #onWindowResize() {
@@ -436,6 +504,10 @@ class Game {
     getUIManager() { return this.#uiManager; }
     getSaveManager() { return this.#saveManager; }
     getGameScene() { return this.#gameScene; }
+
+    isInitialized() {
+        return this.#isInitialized;
+    }
 
     resume() {
         this.#logger.info('Resuming game...');
